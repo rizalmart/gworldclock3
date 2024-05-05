@@ -1,0 +1,4 @@
+     ../main.h \
+     ../zones.c \
+     ../main.c \
+     ../sync.c

@@ -1,0 +1,175 @@
+# GWORLDCLOCK I18N translation list (Japanese)
+# Copyright (C) 2003 Drew Parsons
+# This file is distributed under the same license as the gworldclock package.
+# Junichi Uekawa <dancer@debian.org>, 2003.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: gworldclock\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2003-07-26 16:20+0900\n"
+"PO-Revision-Date: 2003-07-26 16:21+0900\n"
+"Last-Translator: Junichi Uekawa <dancer@debian.org>\n"
+"Language-Team: japanese\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=EUC-JP\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: main.h:50
+msgid "/_File"
+msgstr "ファイル(_F)"
+
+#: main.h:54
+msgid "/File/_Save Zones"
+msgstr "ゾーンを保存(_S)"
+
+#: main.h:56
+msgid "/File/_Quit"
+msgstr "終了(_Q)"
+
+#: main.h:57
+msgid "/_Options"
+msgstr "オプション(_O)"
+
+#: main.h:58
+msgid "/Options/_Add Timezone"
+msgstr "タイムゾーンを追加(_A)"
+
+#: main.h:59
+msgid "/Options/_Delete Timezone"
+msgstr "タイムゾーンを削除(_D)"
+
+#: main.h:60
+msgid "/Options/Change Description"
+msgstr "解説を変更"
+
+#: main.h:61
+msgid "/Options/Rendezvous"
+msgstr "時間を同期"
+
+#: main.h:62
+msgid "/_Help"
+msgstr "ヘルプ(_H)"
+
+#: main.h:63
+msgid "/_Help/About"
+msgstr "このプログラムについて"
+
+#: main.h:67
+msgid "/Rendezvous"
+msgstr "時間を同期"
+
+#: main.h:69
+msgid "/Add Timezone"
+msgstr "タイムゾーンを追加"
+
+#: main.h:70
+msgid "/Delete Timezone"
+msgstr "タイムゾーンを削除"
+
+#: main.h:71
+msgid "/Change Description"
+msgstr "説明を変更"
+
+#: zones.c:35
+msgid "Delete Zone"
+msgstr "タイムゾーンを削除"
+
+#: zones.c:36
+msgid "No zone chosen for deleting."
+msgstr "削除するタイムゾーンが選択されていません"
+
+#: zones.c:126
+#, c-format
+msgid "Could not create list: %s"
+msgstr "リストを作成できません: %s"
+
+#: zones.c:172 zones.c:181 zones.c:253
+msgid "Read Zone Table"
+msgstr "ゾーンテーブルを読む"
+
+#: zones.c:174 zones.c:255
+#, c-format
+msgid ""
+" Error reading zone table \"%s\": \n"
+" %s \n"
+"How very sad.\n"
+msgstr ""
+"ゾーンテーブル \"%s\" を読み込むのにエラーが発生しました: \n"
+" %s \n"
+"残念です\n"
+
+#: zones.c:183
+#, c-format
+msgid ""
+" Error reading country table \"%s\": \n"
+" %s \n"
+"How very sad.\n"
+msgstr ""
+"国テーブル \"%s\" を読み込むのにエラーが発生しました: \n"
+" %s \n"
+"残念です\n"
+
+#: zones.c:431
+msgid "Continents"
+msgstr "大陸"
+
+#: zones.c:432
+msgid "Countries"
+msgstr "国"
+
+#: zones.c:433
+msgid "Regions"
+msgstr "地域"
+
+#: zones.c:593
+msgid "Add Time Zone"
+msgstr "タイムゾーンを追加"
+
+#: zones.c:616
+msgid "Description"
+msgstr "説明"
+
+#: zones.c:631
+msgid "TZ value"
+msgstr "タイムゾーン"
+
+#: zones.c:646
+msgid "Add Zone"
+msgstr "タイムゾーンを追加"
+
+#: zones.c:656 rendezvous.c:495
+msgid "Done"
+msgstr "完了"
+
+#: zones.c:722
+msgid "No zone chosen for changing."
+msgstr "変更のためにはゾーンは選択されていません"
+
+#: zones.c:732
+msgid "Change Zone Description"
+msgstr "説明を変更"
+
+#: main.c:144
+msgid "About gworldclock"
+msgstr "gworldclockについて"
+
+#: main.c:338
+msgid "Time Zone"
+msgstr "タイムゾーン"
+
+#: main.c:338
+msgid "Time&Date"
+msgstr "現在時刻"
+
+#: rendezvous.c:386
+msgid "Date:"
+msgstr "日付："
+
+#: rendezvous.c:457
+msgid "Time:"
+msgstr "時間："
+
+#: rendezvous.c:488
+msgid "Update"
+msgstr "更新"

@@ -1,0 +1,173 @@
+# GWORLDCLOCK I18N translation list (English default)
+# Copyright (C) 2003 Drew Parsons
+# This file is distributed under the same license as the gworldclock package.
+# Drew Parsons <dparsons@emerall.com>, 2003.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2003-07-26 16:20+0900\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: main.h:50
+msgid "/_File"
+msgstr ""
+
+#: main.h:54
+msgid "/File/_Save Zones"
+msgstr ""
+
+#: main.h:56
+msgid "/File/_Quit"
+msgstr ""
+
+#: main.h:57
+msgid "/_Options"
+msgstr ""
+
+#: main.h:58
+msgid "/Options/_Add Timezone"
+msgstr ""
+
+#: main.h:59
+msgid "/Options/_Delete Timezone"
+msgstr ""
+
+#: main.h:60
+msgid "/Options/Change Description"
+msgstr ""
+
+#: main.h:61
+msgid "/Options/Rendezvous"
+msgstr ""
+
+#: main.h:62
+msgid "/_Help"
+msgstr ""
+
+#: main.h:63
+msgid "/_Help/About"
+msgstr ""
+
+#: main.h:67
+msgid "/Rendezvous"
+msgstr ""
+
+#: main.h:69
+msgid "/Add Timezone"
+msgstr ""
+
+#: main.h:70
+msgid "/Delete Timezone"
+msgstr ""
+
+#: main.h:71
+msgid "/Change Description"
+msgstr ""
+
+#: zones.c:35
+msgid "Delete Zone"
+msgstr ""
+
+#: zones.c:36
+msgid "No zone chosen for deleting."
+msgstr ""
+
+#: zones.c:126
+#, c-format
+msgid "Could not create list: %s"
+msgstr ""
+
+#: zones.c:172 zones.c:181 zones.c:253
+msgid "Read Zone Table"
+msgstr ""
+
+#: zones.c:174 zones.c:255
+#, c-format
+msgid ""
+" Error reading zone table \"%s\": \n"
+" %s \n"
+"How very sad.\n"
+msgstr ""
+
+#: zones.c:183
+#, c-format
+msgid ""
+" Error reading country table \"%s\": \n"
+" %s \n"
+"How very sad.\n"
+msgstr ""
+
+#: zones.c:431
+msgid "Continents"
+msgstr ""
+
+#: zones.c:432
+msgid "Countries"
+msgstr ""
+
+#: zones.c:433
+msgid "Regions"
+msgstr ""
+
+#: zones.c:593
+msgid "Add Time Zone"
+msgstr ""
+
+#: zones.c:616
+msgid "Description"
+msgstr ""
+
+#: zones.c:631
+msgid "TZ value"
+msgstr ""
+
+#: zones.c:646
+msgid "Add Zone"
+msgstr ""
+
+#: zones.c:656 rendezvous.c:495
+msgid "Done"
+msgstr ""
+
+#: zones.c:722
+msgid "No zone chosen for changing."
+msgstr ""
+
+#: zones.c:732
+msgid "Change Zone Description"
+msgstr ""
+
+#: main.c:144
+msgid "About gworldclock"
+msgstr ""
+
+#: main.c:338
+msgid "Time Zone"
+msgstr ""
+
+#: main.c:338
+msgid "Time&Date"
+msgstr ""
+
+#: rendezvous.c:386
+msgid "Date:"
+msgstr ""
+
+#: rendezvous.c:457
+msgid "Time:"
+msgstr ""
+
+#: rendezvous.c:488
+msgid "Update"
+msgstr ""
+
+
+
