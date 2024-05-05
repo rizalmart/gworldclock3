@@ -1,11 +1,11 @@
 gworldclock allows the time in any number of time zones chosen by the user to 
 be tracked.  The zones may also be "synchronised" ("rendezvoused") to times 
-other than the current time.  Zones are stored in $XDG_CONFIG_HOME/tzlist.   
+other than the current time.  Zones are stored in $XDG_CONFIG_HOME/gworldclock/tzlist.list.   
 
 tzwatch is a script which displays the time for the different zones to the 
-console.  It also uses $XDG_CONFIG_HOME/tzlist.
+console.  It also uses $XDG_CONFIG_HOME/gworldclock/tzlist.list.
 
-Some user preferences may be set in $XDG_CONFIG_HOME/gworldclock, an XML config
+Some user preferences may be set in $XDG_CONFIG_HOME/gworldclock/gworldclock.xml, an XML config
 file.  For example:
 <gworldclock>
   <timeDisplayFormat>%c</timeDisplayFormat>
@@ -17,13 +17,13 @@ file.  For example:
 timeDisplayFormat indicates how the display of the time in gworldclock
 is to be formatted.  It may be set within the program using the menu
 item File/Preferences, which will automatically save to
-$XDG_CONFIG_HOME/gworldclock.
+$XDG_CONFIG_HOME/gworldclock/gworldclock.xml.
 
 The <doneLabel> item inside <rendezvous> enables the text of the
 "Done" button to be changed (indicating the user wishes to return from
 Rendezvous to normal clock operations).  Some users have indicated
 that "Done" is not clear to them, so this facility allows them to set
-their preferred label.  It can only be set by hand in $XDG_CONFIG_HOME/gworldclock,
+their preferred label.  It can only be set by hand in $XDG_CONFIG_HOME/gworldclock/gworldclock.xml,
 the user interface within the program does not cater for it.
 
 

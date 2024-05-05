@@ -3,7 +3,7 @@
 This program is designed to keep track of the time and date in various 
 time zones around the world.  
 
-The zones are kept in a configuration file (default ~/.tzlist), one zone 
+The zones are kept in a configuration file (default /$XDG_CONFIG_HOME/gworldclock/tzlist.list), one zone 
 per line.  Each line has one or two entries: the first is the TZ value 
 corresponding, the second is an optional description string enclosed in 
 inverted commas ('"').
@@ -83,6 +83,27 @@ gint timer;
 
 GtkBox *syncBox;
 
+GdkPixbuf *load_logo_from_icon_name(const gchar *icon_name) {
+	
+    GtkIconTheme *icon_theme = gtk_icon_theme_get_default();
+
+    GtkIconInfo *icon_info = gtk_icon_theme_lookup_icon(icon_theme, icon_name, 48, GTK_ICON_LOOKUP_USE_BUILTIN);
+
+    if (icon_info != NULL) {
+ 
+        const gchar *icon_filename = gtk_icon_info_get_filename(icon_info);
+
+        GdkPixbuf *logo = gdk_pixbuf_new_from_file(icon_filename, NULL);
+
+        g_object_unref(icon_info);
+        g_object_unref(icon_theme);
+
+        return logo;
+    } else {
+        return NULL;
+    }
+}
+
 const gchar* translate_func (const gchar * s, gpointer p)
 {
   /* 
@@ -123,6 +144,7 @@ void AboutDialog( GtkWidget *w, gpointer clocklist )
     gtk_about_dialog_set_comments( GTK_ABOUT_DIALOG(dialog), comments->str );
     gtk_about_dialog_set_license( GTK_ABOUT_DIALOG(dialog) , licence->str );
     gtk_about_dialog_set_translator_credits( GTK_ABOUT_DIALOG(dialog), _("translator-credits") );
+    gtk_about_dialog_set_logo(GTK_ABOUT_DIALOG(dialog), NULL);
 
     gtk_show_about_dialog( NULL,
        "copyright", gtk_about_dialog_get_copyright( GTK_ABOUT_DIALOG(dialog) ),

@@ -20,7 +20,7 @@ zones to be "rendezvoused" or "synchronised" to a time other than the current ti
 The time zones may be chosen from the list given in the GUI user
 interface.  The zones available are generated from the data in
 /usr/share/zoneinfo/zone.tab.  The chosen set of zones is stored
-in ${HOME}/.tzlist by default, but an alternate file may be specified
+in ${XDG_CONFIG_HOME}/gworldclock/tzlist.list by default, but an alternate file may be specified
 at the command line via -f. Alternatively this file may be
 created by hand in TZ format. The zone list is kept in a format
 consistent with the shell script tzwatch, currently found in
@@ -32,7 +32,7 @@ inverted commas ("), providing a name for the zone.
 .TP
 \fB-f \fIFILE\fB\fR
 Read zone list from \fIFILE\fR instead
-of ${HOME}/.tzlist.
+of ${XDG_CONFIG_HOME}/gworldclock/tzlist.list.
 .SH "SEE ALSO"
 .PP
 tzwatch (1)

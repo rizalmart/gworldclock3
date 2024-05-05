@@ -1,5 +1,5 @@
 /* Processes user options from the command line or from the option file
-~/.gworldclock.
+$XDG_CONFIG_HOME/gworldclock/gworldclock.xml
 
 .gworldclock is an XML file, with default structure:
 
@@ -36,6 +36,9 @@ how to use XML from within C.
 #include <string.h>
 #include <strings.h>
 
+#include <stdio.h>
+#include <sys/stat.h>
+
 #include "timer.h"
 #include "resize.h"
 
@@ -45,8 +48,8 @@ how to use XML from within C.
 #define SHORT_DISPLAY "%x %l:%M%P"
 #define SHORT_DISPLAY_24HOUR "%x %R"
 
-gchar *defaultOptionFile="gworldclock";
-gchar *defaultConfigFilename="tzlist";
+gchar *defaultOptionFile="gworldclock.xml";
+gchar *defaultConfigFilename="tzlist.list";
 gchar *defaultTimeDisplayFormat = LOCALE_DEFAULT_DISPLAY;
 extern gchar *defaultRendezvousUIFormat;
 
@@ -60,6 +63,47 @@ GString *oldTimeDisplayFormat;
 #define TIME_DISPLAY_FORMAT_NODE "timeDisplayFormat"
 #define RENDEZVOUS_NODE "rendezvous"
 #define RENDEZVOUS_DONELABEL_NODE "doneLabel"
+
+int isDirectoryExists(const char *path) {
+    struct stat info;
+    if (stat(path, &info) != 0)
+        return 0;
+    else if (info.st_mode & S_IFDIR)
+        return 1;
+    else
+        return 0;
+}
+
+int make_config_dir(){
+	 
+    GString *xdg_config_home = getenv("XDG_CONFIG_HOME");
+	
+    if (xdg_config_home == NULL || xdg_config_home == '\0') {
+        xdg_config_home = getenv("HOME");
+        if (xdg_config_home == NULL) {
+            fprintf(stderr, "Error: Cannot determine XDG_CONFIG_HOME or home directory.\n");
+            return 1;
+        }
+        xdg_config_home = g_build_filename(xdg_config_home, ".config", NULL);
+    }
+
+    gchar *gworldclock_dir = g_build_filename(xdg_config_home, "gworldclock", NULL);
+
+    if (!g_file_test(gworldclock_dir, G_FILE_TEST_EXISTS)) {
+        if (g_mkdir_with_parents(gworldclock_dir, 0700)<0) {
+            fprintf(stderr, "Error: Failed to create directory '%s'\n", gworldclock_dir);
+            g_free(gworldclock_dir);
+            return 1;
+        }
+        printf("Directory '%s' created successfully.\n", gworldclock_dir);
+    } else {
+        printf("Directory '%s' already exists.\n", gworldclock_dir);
+    }
+
+    g_free(gworldclock_dir);
+    
+    return 0;
+}
 
 GString *getTimeDisplayFormat( xmlDocPtr optionXML )
 {
@@ -144,19 +188,27 @@ void GetOptions( int argc, char **argv )
   xmlDocPtr optionXML;
   GString *temp;
 
+  make_config_dir();
 
   /* set defaults */
   configfile = g_string_new(g_strdup((gchar *) getenv("XDG_CONFIG_HOME")));  
-  g_string_append(configfile,"/");
+  g_string_append(configfile,"/gworldclock/");
   g_string_append(configfile,defaultConfigFilename);
 
   displayFormat = g_string_new( g_strdup( defaultTimeDisplayFormat ) );
 
  /* read configuration options from file */
   optionFile = g_string_new(g_strdup((gchar *) getenv("XDG_CONFIG_HOME")));  
-  g_string_append(optionFile,"/");
+  g_string_append(optionFile,"/gworldclock/");
   g_string_append(optionFile,defaultOptionFile);
-  optionXML = xmlParseFile( optionFile->str );
+  
+  if(g_file_test(optionFile, G_FILE_TEST_EXISTS)){
+	optionXML = xmlParseFile( optionFile->str );
+  }
+  else{
+    optionXML = NULL;
+  }	  
+  
   if ( optionXML!=NULL )
   {
      temp = getTimeDisplayFormat(optionXML);
@@ -194,7 +246,7 @@ void GetOptions( int argc, char **argv )
 
 }
 
-/* save options to options file (default ~/.gworldclock) 
+/* save options to options file (default $XDG_CONFIG_HOME/gworldclock/gworldclock.xml) 
    - creates the file if it does not already exist
 */
 gint SaveOptions()
@@ -204,8 +256,16 @@ gint SaveOptions()
    xmlNodePtr root, cur, foundNode=NULL;
    xmlChar *formatText;
    gint save = FALSE;
+   
+   make_config_dir();
 
-   optionXML = xmlParseFile( optionFile->str );
+   if(g_file_test(optionFile, G_FILE_TEST_EXISTS)){
+	 optionXML = xmlParseFile( optionFile->str );
+   }
+   else{
+     optionXML = NULL;
+   }	 
+   
    if ( optionXML==NULL ) /* create new document */
    {
       optionXML = xmlNewDoc(XMLVERSION);

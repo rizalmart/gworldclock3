@@ -30,7 +30,7 @@ extern gint timer;
    Rendezvous.  Certain users (see Debian bug #213368) seem, however,
    not to understand that "Done" means, ahem, "done".  To accommodate
    such users I will allow the "Done" label to be set by the user:
-   in ~/.gworldclock, e.g.:
+   in $XDG_CONFIG_HOME/gworldclock/gworldclock.xml, e.g.:
    <gworldclock>
        <rendezvous>
            <doneLabel>Return</doneLabel>

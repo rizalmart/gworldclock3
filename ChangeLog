@@ -1,3 +1,10 @@
+3.0.0 	04 May 2024
+	* Ported to GTK+3
+	* Make XDG compliant
+	* config files ~/.gworldclock and ~/.tzlist moved to
+	  $XDG_CONFIG_HOME/gworldclock/gworldclock.xml and
+	  $XDG_CONFIG_HOME/gworldclock/tzlist.list
+
 1.4.4	28 March 2005
 	* Create About Dialog using new API.
 	* Reconstructed AddZone dialog using GtkTreeModel instead of

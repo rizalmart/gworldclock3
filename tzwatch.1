@@ -8,7 +8,7 @@ tzwatch \- Display the time in a number of time zones, specified by the user
 .B Tzwatch
 displays the time in a number of time zones, specified by the user.
 The list of time zones (format as TZ variable) is kept in 
-\fB${HOME}/.tzlist\fP. The time zone is chosen using tzselect.
+\fB${XDG_CONFIG_HOME}/gworldclock/tzlist.list\fP. The time zone is chosen using tzselect.
 
 .SH OPTIONS
 .TP
@@ -23,7 +23,7 @@ If no command line options are given, the time in each zone at the
 given moment is printed.
 
 .SH REMARKS
-\fB${HOME}/.tzlist\fP could be edited by hand, 
+\fB${XDG_CONFIG_HOME}/gworldclock/tzlist.list\fP could be edited by hand, 
 with a valid value for the TZ variable on each line.
 
 .B Tzwatch 

@@ -2,7 +2,7 @@
 
 void GetOptions( int argc, char **argv );
 
-/* save options to options file (default ~/.gworldclock) 
+/* save options to options file (default $XDG_CONFIG_HOME/gworldclock/gworldclock.xml) 
    - creates the file if it does not already exist
 */
 gint SaveOptions();

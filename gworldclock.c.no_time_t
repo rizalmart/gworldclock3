@@ -3,7 +3,7 @@
     This program is designed to keep track of the time and date in various 
     timezones around the world.  
 
-    The zones are kept in a configuration file (default ~/.tzlist), one zone 
+    The zones are kept in a configuration file (default ${XDG_CONFIG_HOME}/gworldclock/tzlist.list), one zone 
     per line.  Each line has one or two entries: the first is the TZ value 
     corresponding, the second is an optional description string enclosed in 
     inverted commas ('"').
@@ -135,7 +135,7 @@ void  start_clocks(GtkWidget *clocklist)
   
   /* if configfile not already defined, set to default file in home directory */
   if (!configfile) {
-    configfile = g_string_new(g_strdup((gchar *) getenv("HOME")));  
+    configfile = g_string_new(g_strdup((gchar *) getenv("XDG_CONFIG_HOME")));  
     g_string_append(configfile,defaultConfigFilename);
   }
 

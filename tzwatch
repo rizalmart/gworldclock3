@@ -3,10 +3,10 @@
 # tzwatch
 
 # Displays the time in a number of time zones, specified by the user.
-# The list of time zones (format as TZ variable) is kept in ${XDG_CONFIG_HOME}/tzlist
+# The list of time zones (format as TZ variable) is kept in ${XDG_CONFIG_HOME}/gworldclock/tzlist.list
 # The time zone is chosen using tzselect 
 # (Debian default is /usr/bin/tzselect, in package libc6).
-# ( ${XDG_CONFIG_HOME}/tzlist could be edited by hand, with a valid value for the TZ variable on each line)
+# ( ${XDG_CONFIG_HOME}/gworldclock/tzlist.list could be edited by hand, with a valid value for the TZ variable on each line)
 
 # Command line options:
 #    -c, configure time zones (add or remove)
@@ -41,9 +41,13 @@
 
 # default config file
 
-TZ_WATCH=${HOME}/.tzlist
+XDG_CONF_DIR=${HOME}/.config/gworldclock
 
-[ "$XDG_CONFIG_HOME" != "" ] && TZ_WATCH=${XDG_CONFIG_HOME}/tzlist
+[ "$XDG_CONFIG_HOME" != "" ] && XDG_CONF_DIR=${XDG_CONFIG_HOME}/gworldclock
+
+[ ! -d ${XDG_CONF_DIR} ] && mkdir -p ${XDG_CONF_DIR}
+
+TZ_WATCH=${XDG_CONF_DIR}/tzlist.list
 
 function showHelp {
     echo "Usage: tzwatch [-c] [-f FORMAT]"
