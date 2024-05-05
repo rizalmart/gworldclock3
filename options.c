@@ -45,8 +45,8 @@ how to use XML from within C.
 #define SHORT_DISPLAY "%x %l:%M%P"
 #define SHORT_DISPLAY_24HOUR "%x %R"
 
-gchar *defaultOptionFile=".gworldclock";
-gchar *defaultConfigFilename=".tzlist";
+gchar *defaultOptionFile="gworldclock";
+gchar *defaultConfigFilename="tzlist";
 gchar *defaultTimeDisplayFormat = LOCALE_DEFAULT_DISPLAY;
 extern gchar *defaultRendezvousUIFormat;
 
@@ -146,14 +146,14 @@ void GetOptions( int argc, char **argv )
 
 
   /* set defaults */
-  configfile = g_string_new(g_strdup((gchar *) getenv("HOME")));  
+  configfile = g_string_new(g_strdup((gchar *) getenv("XDG_CONFIG_HOME")));  
   g_string_append(configfile,"/");
   g_string_append(configfile,defaultConfigFilename);
 
   displayFormat = g_string_new( g_strdup( defaultTimeDisplayFormat ) );
 
  /* read configuration options from file */
-  optionFile = g_string_new(g_strdup((gchar *) getenv("HOME")));  
+  optionFile = g_string_new(g_strdup((gchar *) getenv("XDG_CONFIG_HOME")));  
   g_string_append(optionFile,"/");
   g_string_append(optionFile,defaultOptionFile);
   optionXML = xmlParseFile( optionFile->str );
