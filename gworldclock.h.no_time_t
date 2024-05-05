@@ -1,0 +1,91 @@
+#define VERSION "0.2.0"
+#define RELEASE_DATE "June 2001"
+
+void AddZone( gpointer clocklist );
+void DeleteZone( gpointer clocklist );
+void ChangeZoneDescription(gpointer clocklist);
+gint SaveZones(gpointer clocklist);
+static void send_clock_quit( gpointer clocklist );
+gint SetTime(gpointer clocklist);
+gint SetToGivenTime(gpointer clocklist, struct tm *timeToSet);
+void AboutDialog(gpointer clocklist);
+void Synchronise(gpointer clocklist);
+struct tm *extractSyncTime(struct tm *);
+
+static GtkItemFactoryEntry mainmenu_items[] = {
+  { "/_File",         NULL,         NULL, 0, "<Branch>" },
+  { "/File/_Open Zones",     NULL, NULL, 0, NULL },
+  { "/File/_Save Zones",     NULL, (void *)SaveZones, 0, NULL },
+  { "/File/Save Zones _As",     NULL, NULL, 0, NULL },
+  { "/File/_Quit",     "<control>Q", send_clock_quit, 0, NULL },
+  { "/_Options",      NULL,         NULL, 0, "<Branch>" },
+  { "/Options/_Add Timezone",  "<control>A", AddZone, 0, NULL },
+  { "/Options/_Delete Timezone",  "<control>D", DeleteZone, 0, NULL },
+  { "/Options/Change Description",  NULL,  ChangeZoneDescription, 0, NULL},
+  { "/Options/Synchronise Time",  NULL,  Synchronise, 0, NULL},
+  { "/_Help",         NULL,         NULL, 0, "<LastBranch>" },
+  { "/_Help/About",   NULL,         AboutDialog, 0, NULL }
+};
+
+static GtkItemFactoryEntry popupmenu_items[] = {
+  { "/Synchronise Time",  NULL,  Synchronise, 0, NULL},
+  /* setup "add zone" here to add at selected row! */
+  { "/Add Timezone",  NULL, AddZone, 0, NULL },
+  { "/Delete Timezone",  NULL,  DeleteZone, 0, NULL},
+  { "/Change Description",  NULL,  ChangeZoneDescription, 0, NULL}
+};
+
+gchar *continents[] = 
+{ "Africa",
+  "Americas",
+  "Antarctica",
+  "Arctic Ocean",
+  "Asia",
+  "Atlantic Ocean",
+  "Australia",
+  "Europe",
+  "Indian Ocean",
+  "Pacific Ocean" };
+
+/* Keep this number up to date with the number of continents in the
+   array above.  Not that the number of continents on Earth is going
+   to change, but you know.  */ 
+
+gint Ncontinents = 10;  
+
+
+typedef struct NameCodeType {
+  gchar *name;
+  gchar *code;  /* actually only 2 characters needed, but 3 would be better */
+} NameCodeType;
+
+/* this data is used to construct the time when synchronising */
+typedef struct SyncData {
+  gchar *zoneName;
+  gint hour;
+  gint minute;
+  gint date;
+  gint month;
+  gint year;
+} SyncData;
+
+
+/* 31 days in most months... */
+GList *list31days = NULL;
+
+/* months of the year */
+GList *listMonths = NULL;
+
+/* sample list of years */
+GList *listYears = NULL;
+
+/* hours, 24 hour time */
+GList *listHours = NULL;
+
+/* minutes (every 15 min will be used) */
+GList *listMinutes = NULL;
+
+/* approx width of one character in pixels */
+gint CHAR_WIDTH=15;
+
+gint SYNCBOX_HEIGHT=145;

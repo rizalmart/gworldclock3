@@ -1,0 +1,10 @@
+#From GTK+ FAQ: "I want to add some configure stuff, how could I do this?"
+aclocal -I m4
+autoheader
+autoconf
+#automake --add-missing --include-deps --foreign 
+
+# we don't want symlinks to missing files, so use --copy
+# and use --force-missing to make sure we have the freshest possible versions
+# --include-deps is deprecated (turned on by default) so leave it off
+automake --add-missing --copy --force-missing --foreign

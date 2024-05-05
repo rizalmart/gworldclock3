@@ -1,0 +1,169 @@
+#!/bin/bash
+
+# tzwatch
+
+# Displays the time in a number of time zones, specified by the user.
+# The list of time zones (format as TZ variable) is kept in ${XDG_CONFIG_HOME}/tzlist
+# The time zone is chosen using tzselect 
+# (Debian default is /usr/bin/tzselect, in package libc6).
+# ( ${XDG_CONFIG_HOME}/tzlist could be edited by hand, with a valid value for the TZ variable on each line)
+
+# Command line options:
+#    -c, configure time zones (add or remove)
+#    -f FORMAT  display time according to FORMAT (see 'date' command)
+# If no command line options are given, the time in each zone at the
+# given moment is printed.
+
+# Things that could be done:
+# Possibly this would be better done in perl.  Too bad.
+# A window-graphics display could be nice too.
+# Add an option -r [n] to  run continuously (display updated every n seconds)
+
+# This program is considered copyrighted and distributable under the terms of the GPL, which I will not bother copying here.
+
+#rizalmart
+# make XDG compliant
+
+# Drew Parsons <dparsons@debian.org>
+# Version 1.2.3 14 July 2002
+#  only refer to timezone label for existing zones when configuring
+# Version 1.2.2, 20 Jan 2002
+#   change "timezone" to "time zone".  tzselect is now in package libc6.
+# Version 1.2.1, May 2000
+#   made recognition of timezone "Local" case-insensitive
+# Version 1.2, March 2000
+#   configfile renamed to .tzlist (for compatibility with gworldclock), 'local' zone added
+# Version 1.1, [2] January 2000 (should that be 1.0.1 ?? )
+#   tzselect gone missing in potato.  Located in slink's timezones package.
+# Version 1.0, 29 November 1999
+#   Original version
+
+
+# default config file
+
+TZ_WATCH=${HOME}/.tzlist
+
+[ "$XDG_CONFIG_HOME" != "" ] && TZ_WATCH=${XDG_CONFIG_HOME}/tzlist
+
+function showHelp {
+    echo "Usage: tzwatch [-c] [-f FORMAT]"
+    echo "  -c          configure time zones (add or remove)"
+    echo "  -f FORMAT   display time according to FORMAT (see 'date' command)"
+    echo "  -d DATESTRING   display time given by DATESTRING (see 'date -d')"
+}
+
+if [ "$1" == "--help" ]; then
+    showHelp
+    exit 0;
+fi
+
+USER_DATE=""
+
+# set config file if not yet done
+if [ ! -s $TZWATCH ]; then
+    if [ `type -p tzselect` ]; then
+	tzselect > $TZWATCH
+    else
+	echo tzselect not found.  Cannot configure tzwatch.
+	exit 1
+    fi
+fi
+
+while getopts "cf:d:" OPT; do
+    case $OPT in
+    c) # configure: add or remove entry
+	choice=
+	while [ "$choice" != "Done" ]; do
+	    echo Choose zone to remove or add new zone:
+	    select choice in \
+		`awk  '// {print $1}' $TZWATCH` 'Add Zone' 'Add Local Time' 'Done' 
+	    do
+		case $choice in
+		'')  
+		    echo 'Please enter a number in range.';;
+		'Add Zone')
+		    if [ `type -p tzselect` ]; then
+			tzselect >> $TZWATCH
+		    else
+			echo tzselect not found.  Cannot add time zone.
+		    fi
+# there ought to something we can do here to make sure the zone has not been already be chosen, sort lines and removes duplicates or whatever
+		    echo
+		    break;;
+
+		'Add Local Time')
+		    if [ `type -p tzselect` ]; then
+			echo Local >> $TZWATCH
+		    else
+			echo tzselect not found.  Cannot add local time.
+		    fi
+		    break;;
+
+		'Done')
+		    break;;
+		?*)
+#swapping '/' in zone name to '\/' for sed.  I can't believe how many darn  \\\\\'s you need!
+		    debarredzone=`echo $choice | sed 's|/|\\\/|'`
+		    sed -e "\|$debarredzone|d" $TZWATCH | cat > $TZWATCH
+		    break;;
+		esac
+	    done
+	done;;
+    f) #format string for date output
+	DATEFORMAT=$OPTARG
+	# if the given format has no leading +, then add one
+        if [ -z "$(echo $DATEFORMAT |
+	       sed "{s/^[\'\"]//g; s/[\'\"]$//g}" |  # strip surrounding quotemarks
+	       awk /^\\+/)" ]; then   # check for leading +
+	   DATEFORMAT=+$DATEFORMAT
+	fi;;
+    d) # user provides date to display
+	QUOTED_DATE=$(echo ${OPTARG} | sed "s/\"/\\\\\\\"/g")
+	USER_DATE=(--date \"${QUOTED_DATE[@]}\");;
+    ?*)
+	 showHelp
+	 exit 0;;
+    esac	
+done
+
+##################################################################3
+# finally, display times
+# zdump could be used here, but then '-f' formatting would be lost.  
+# Not that I use date formatting, but it's the principle of the matter.
+
+# wc always prints file name.  How annoying.  awk it away.
+NZ=`wc -l $TZWATCH | awk '{print $1}'`
+n=1
+until [ $(( $n )) -gt $(( $NZ )) ]; do
+
+#grab zone from config file
+    zoneRaw=`awk -v nn=$n 'NR==nn { print $1}' $TZWATCH`
+# allow "local" time zone to be in any case, "Local" or "local" or whatever
+    zone=`echo $zoneRaw | sed s/local/Local/I`
+
+
+    # Create time string.
+    # Sorry about the doubled date calls, it was the only way I could
+    # get the format string handled correctly (without providing a default 
+    # format string myself in the case where the user does not give one)
+    if [ -z "$DATEFORMAT" ]; then
+        if [ $zone == "Local" ]; then
+	    TZdate=$(LANG=C eval date ${USER_DATE[@]})
+        else
+	    TZdate=$(LANG=C TZ="$zone" eval date ${USER_DATE[@]})
+        fi
+    else
+        if [ $zone == "Local" ]; then
+	    TZdate=$(LANG=C eval date ${USER_DATE[@]} "$DATEFORMAT")
+        else
+	    TZdate=$(LANG=C TZ="$zone" eval date ${USER_DATE[@]} "$DATEFORMAT")
+        fi
+    fi
+
+# and display 
+# I'd want the zone on the left, but then the date strings would be misaligned
+    echo "$TZdate   $zone"
+
+# why doesn't '+=' work for incrementing n, like in C?
+    n=$(( $n + 1 ))
+done

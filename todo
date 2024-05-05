@@ -1,0 +1,4 @@
+* open/save to configfile (?)
+* recognise when list order was changed, to flag for saving list on exit
+  (implemented, but GTK+2 broken?)
+* check for memory leaks (eg when menus opened again and again?)

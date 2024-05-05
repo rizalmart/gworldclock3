@@ -1,0 +1,35 @@
+.TH TZWATCH 1 
+.SH NAME
+tzwatch \- Display the time in a number of time zones, specified by the user
+.SH SYNOPSIS
+.B tzwatch 
+.I "[options]"
+.SH DESCRIPTION
+.B Tzwatch
+displays the time in a number of time zones, specified by the user.
+The list of time zones (format as TZ variable) is kept in 
+\fB${HOME}/.tzlist\fP. The time zone is chosen using tzselect.
+
+.SH OPTIONS
+.TP
+.B \-c
+Configure time zones (add or remove).
+.TP
+.B \-f FORMAT
+Display time according to FORMAT (see 'date' command).
+
+.PP
+If no command line options are given, the time in each zone at the
+given moment is printed.
+
+.SH REMARKS
+\fB${HOME}/.tzlist\fP could be edited by hand, 
+with a valid value for the TZ variable on each line.
+
+.B Tzwatch 
+was written by Drew Parsons <dparsons@debian.org>.
+This manual page was written by Joop Stakenborg <pa3aba@debian.org>,
+for the Debian GNU/Linux system (but may be used by others).
+
+.SH SEE ALSO
+gworldclock(1), tzselect(1)

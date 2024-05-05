@@ -1,0 +1,1722 @@
+/*  gworldclock
+
+    This program is designed to keep track of the time and date in various 
+    timezones around the world.  
+
+    The zones are kept in a configuration file (default ~/.tzlist), one zone 
+    per line.  Each line has one or two entries: the first is the TZ value 
+    corresponding, the second is an optional description string enclosed in 
+    inverted commas ('"').
+
+    The config file is compatible for use with tzwatch, a shell script 
+    writing the time in the given zones to stdout.
+
+    Note, time_t is limited.  It apparently resolves to a 32bit integer (on x86 at 
+    least), which only lets the clocks go back to 6:46am, 14 Dec 1901
+    (2147483648 seconds before 1 Jan 1970).
+    On the other side, the limit is 19 January 2038, 3:13am.
+    It might therefore be an idea to only use struct tm, never time_t.
+    However time_t is a useful concept...
+
+    To do:  
+      - update list of days in month to be correct for the given month 
+      - check autoconf stuff (why aren't .h's recognised by make?)
+      - have someone compile it for Win32 so I can give it to Kostya & Andrei
+*/
+
+
+/* Copyright (C) 2000-2001 Drew F. Parsons
+ *
+ *     This program is free software; you can redistribute it and/or modify
+ *     it under the terms of the GNU General Public License as published by
+ *     the Free Software Foundation; ( version 2 of the License at time of 
+ *     writing).
+ *
+ *     This program is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ *     You should have received a copy of the GNU General Public License
+ *     along with this program; if not, write to the Free Software
+ *     Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ */
+
+
+#include <errno.h>
+#include <unistd.h> /* getopt */
+#include <gdk/gdkkeysyms.h>
+#include <gtk/gtk.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <string.h>
+
+#include "gworldclock.h"
+#include "dialog.h"
+
+/* so many global variables....how naughty! 
+collect them in a structure to be passed around? */
+gint changed=0;
+gint OKtoQuit=1;
+gint selectedRow=-1;
+gchar *defaultConfigFilename="/.tzlist";
+GString *configfile;
+gchar *ZONE_TABLE="/usr/share/zoneinfo/zone.tab";
+gchar *COUNTRY_TABLE="/usr/share/zoneinfo/iso3166.tab";
+
+/* id of second timer.
+   Set to -1 during synchronisation.
+*/
+gint timer;
+
+GtkBox *syncBox;
+
+void GetOptions( int argc, char **argv )
+{
+  extern GString *configfile;
+  int c;
+
+  while ((c = getopt (argc, argv, "f:")) != -1)
+    switch (c) 
+      {
+      case 'f':
+	configfile = g_string_new(g_strdup((gchar *)optarg));  
+	break;
+	
+      default:
+	break;
+      }
+}
+
+void get_main_menu( GtkWidget  *window,
+		    GtkWidget **menubar,
+		    GtkWidget  *clocklist)
+     /* adapted from menu example in GTK+ tutorial */
+{
+  GtkItemFactory *item_factory;
+  GtkAccelGroup *accel_group;
+  gint nmenu_items = sizeof (mainmenu_items) / sizeof (mainmenu_items[0]);
+
+  accel_group = gtk_accel_group_new ();
+  item_factory = gtk_item_factory_new (GTK_TYPE_MENU_BAR, "<main>", 
+				       accel_group);
+  gtk_item_factory_create_items (item_factory, nmenu_items, mainmenu_items, (gpointer)clocklist);
+
+  gtk_window_add_accel_group (GTK_WINDOW (window), accel_group);
+
+  if (menubar)
+    /* Finally, return the actual menu bar created by the item factory. */ 
+    *menubar = gtk_item_factory_get_widget (item_factory, "<main>");
+}
+
+void  start_clocks(GtkWidget *clocklist)
+{
+  FILE *cf;
+  extern gint changed;
+  extern GString *configfile;
+  extern gchar *defaultConfigFilename;
+
+  /* format of list:
+     name of timezone (TZ variable), description, time in zone
+  */
+  gchar *rowdata[2], *localstr="Local";
+  /* is there a way of reading the information without hardwiring '200' here?
+     eg can flag 'a' in sscanf work with %[ as well as %s ? */
+  gchar description[200], *timezone, line[200];
+  int row;
+  GString *title, *msg;
+  gchar *button[]={"OK"};
+
+  /* ??? associate configfile with list as widget data ?? */
+
+  rowdata[1]=NULL; /* necessary to set to NULL, or segfault related
+		      to List Reordering results */
+  
+  /* if configfile not already defined, set to default file in home directory */
+  if (!configfile) {
+    configfile = g_string_new(g_strdup((gchar *) getenv("HOME")));  
+    g_string_append(configfile,defaultConfigFilename);
+  }
+
+  cf=fopen(configfile->str,"r");
+  if (cf) {
+    while(fgets(line,200,cf)) {
+
+      /* configfile is assumed to have two entries per line,
+	 the TZ value followed by a description enclosed in quotation marks.
+	 If the description is missing, the TZ string is used as a description instead */
+      /* the second entry looks complicated, but just copies the whole set of
+	 characters between two quotation marks
+	 [finds the first '"', accounting for any spaces or tabs, 
+	 then grabs everything up to the second '"'] */
+
+      if ( sscanf(line,"%as %*[ \t\"]%[^\"]",&timezone,description) < 2 )
+	strncpy(description,timezone,200);
+
+      rowdata[0]=g_strdup(description);
+      row=gtk_clist_append( (GtkCList *) clocklist,rowdata);
+      gtk_clist_set_row_data( (GtkCList *) clocklist, row, g_strdup(timezone));
+      g_free(rowdata[0]);
+    }
+    fclose(cf);
+  } 
+  else {    
+    title = g_string_new("Read Zone File");
+    msg = g_string_new(NULL);
+    g_string_sprintf(msg," Error reading zone file \"%s\": \n %s \n",
+		     configfile->str,  g_strerror(errno) );
+    /* note: the do_dialog window cannot yet be made non-modal
+       We'd have to do it by hand to do that */
+    do_dialog(title->str, msg->str, 1, button, 1, NULL, NULL, TRUE);
+    g_string_free(msg,TRUE);
+    g_string_free(title,TRUE);
+
+    rowdata[0]=g_strdup(localstr);
+    row=gtk_clist_append( (GtkCList *) clocklist,rowdata);
+    gtk_clist_set_row_data( (GtkCList *) clocklist, row, g_strdup(rowdata[0]));
+    g_free(rowdata[0]);
+    changed=1;
+  }
+  SetTime((gpointer)clocklist);
+}
+
+gint SetTime(gpointer clocklist)
+{
+  time_t currenttime;
+  struct tm timeStruct, *tp;
+  gchar *TZdefault;
+
+  TZdefault = (gchar *)getenv("TZ");
+
+  /* current time must be passed as UTC */
+  setenv("TZ", "UTC", 1);
+
+  time(&currenttime);
+  tzset();
+  tp = localtime_r( &currenttime, &timeStruct );
+
+  if (TZdefault)
+    setenv("TZ",TZdefault,1);
+  else
+    unsetenv("TZ");
+
+  printf("set current time to %s\n", asctime( localtime_r( &currenttime, &timeStruct ) ) );
+  SetToGivenTime( clocklist, tp  );
+
+  return 1;
+}
+
+/* UTCtimeToSet must be in universal time, as the name suggests */
+gint SetToGivenTime(gpointer clocklist, struct tm *UTCtimeToSet)
+{
+  gchar *timezone, *TZdefault;
+  gchar *text, text2[200];
+  gint N,i;
+
+  time_t t;
+  struct tm timeStruct, *tp;
+
+  printf("setting time to %s\n", asctime( UTCtimeToSet ) );
+
+  TZdefault = (gchar *)getenv("TZ");
+
+  setenv("TZ", "UTC", 1);
+  t = mktime( UTCtimeToSet );
+  tp = localtime_r( &t, &timeStruct );
+    printf("time via time_t = %s (%s)\n", ctime(&t), asctime( tp ));
+
+  N = ((GtkCList *)clocklist)->rows;
+  gtk_clist_freeze( (GtkCList *) clocklist );
+  for(i=0;i<N;i++) {
+    timezone=gtk_clist_get_row_data(( GtkCList *)clocklist, i);
+    if(strcasecmp(timezone,"Local"))
+      setenv("TZ",timezone,1);
+    else {
+      /* local time is set by the ordinary value of TZ */
+      if (TZdefault)
+	setenv("TZ",TZdefault,1);
+      else
+	unsetenv("TZ");
+    }
+    tzset(); 
+    ctime(&t);
+    printf("time in zone = %s\n", asctime( UTCtimeToSet ));
+    /* tp *only* gets updated for zone when ctime is used in this same line.
+       doing it above isn't good enough. That's sick. */
+    tzset(); 
+    ctime(&t);
+    printf("time via time_t = (%s)\n", asctime( tp ));
+    printf("time via time_t = %s (%s)\n", ctime(&t), asctime( tp ));
+    printf("time via time_t = (%s) %s\n", asctime( tp ), ctime(&t));
+    printf("time via time_t = (%s)\n", asctime( tp ));
+
+    /************************************************
+      THIS IS THE CRUCIAL LINE
+      why I can't avoid time_t.  asctime will not adjust for a different
+      timezone, unless ctime is call in the same line, see examples above.
+      Pathetic really. */
+
+    /*    gtk_clist_set_text( (GtkCList *)clocklist,i,1,asctime( UTCtimeToSet ));*/
+    /************************************************/
+
+    /* unless.... */
+    /*    asprintf( &text, "%s %s", ctime(&t), asctime( UTCtimeToSet ) );*/
+    strftime( text2, sizeof(text2), "%x %X", UTCtimeToSet );
+    gtk_clist_set_text( (GtkCList *)clocklist,i,1, strdup(text2));
+    /*    free(text);*/
+    
+
+    /** or better.. UTCtimeToSet->tm_gmtoff = 0 for UTC.
+	Change it to the appropriate value for the time zone, and you're done :)
+	But daylight savings makes it tricky.
+    */
+
+  }
+  gtk_clist_thaw( (GtkCList *) clocklist );
+  if (TZdefault)
+    setenv("TZ",TZdefault,1);
+  else
+    unsetenv("TZ");
+  return 1;
+}
+
+gint start_timer( gpointer clocklist )
+{
+  return gtk_timeout_add( 1000, SetTime, clocklist);
+}
+
+void stop_timer()
+{
+  gtk_timeout_remove( timer );
+  /* set timer to -1 to show that there is no timer, and therefore
+     synchronisation is taking place */
+  timer = -1;
+}
+
+
+void select_row_callback(GtkWidget *widget,
+			 gint row,
+			 gint column,
+			 GdkEventButton *event,
+			 gpointer data)
+{
+  extern gint selectedRow;
+  selectedRow = row;
+}
+
+void AboutDialog( gpointer clocklist )
+{
+  GString *title, *about;
+  gchar *button[]={"OK"};
+
+  /* at some point in the future strings like these will have to 
+     be reorganised to allow for internationalisation */
+  title = g_string_new("About gworldclock");
+  about = g_string_new("gworldclock\n\n");
+  g_string_append(about, "v ");
+  g_string_append(about, VERSION);
+  g_string_append(about, "\n(C) Drew Parsons <dparsons@emerall.com>  ");
+  g_string_append(about, RELEASE_DATE);
+  g_string_append(about, "\nReleased under the General Public License (GPL) v2.0\n");
+
+  g_string_append(about, "\ngworldclock allows you to keep track of the current time\n");
+  g_string_append(about, "in time zones all round the world.\n");
+  g_string_append(about, "You may also synchronise your time zones to a specified time and date.");
+
+  do_dialog(title->str, about->str, 1, button, 1, NULL, NULL, TRUE);
+  g_string_free(about,TRUE);
+  g_string_free(title,TRUE);
+}
+
+void DeleteZone( gpointer clocklist )
+{
+  extern gint changed;
+  extern gint selectedRow;
+  GString *title, *msg;
+  gchar *button[]={"OK"};
+
+  if((selectedRow >= 0) && (selectedRow < ((GtkCList *)clocklist)->rows) ) {
+    gtk_clist_remove( (GtkCList *)clocklist, selectedRow);
+    changed = 1;
+  }
+  else {
+    title = g_string_new("Delete Zone");
+    msg = g_string_new("No zone chosen for deleting.");
+    /* note: the do_dialog window cannot yet be made non-modal
+       We'd have to do it by hand to do that */
+    do_dialog(title->str, msg->str, 1, button, 1, NULL, NULL, TRUE);
+    g_string_free(msg,TRUE);
+    g_string_free(title,TRUE);
+  }
+}
+
+
+/*  Save list of timezones to configfile */
+gint SaveZones(gpointer clocklist)
+{
+  FILE *cf;
+  extern GString *configfile;
+  extern gint changed;
+  gint N,i;
+  gchar *description;
+
+  if ( !(cf=fopen(configfile->str,"w")) ) {
+    return 0;
+  }
+
+  N = ((GtkCList *)clocklist)->rows;
+  gtk_clist_freeze( (GtkCList *) clocklist );
+  for(i=0;i<N;i++) {
+    gtk_clist_get_text( (GtkCList *) clocklist, i, 0, &description);
+
+    /* only write description if there is one! */
+    if(strlen(description)==0)
+      fprintf(cf,"%s\n",
+	      (gchar *)gtk_clist_get_row_data(( GtkCList *)clocklist, i) );
+    else
+      fprintf(cf,"%s    \"%s\"\n",
+	      (gchar *)gtk_clist_get_row_data(( GtkCList *)clocklist, i),
+	      description );
+  }
+  changed=0;
+  gtk_clist_thaw( (GtkCList *) clocklist );
+  return 1;
+}
+
+/* returns name of month (as defined by locale)
+   corresponding to given index (between 1 and 12) */
+gchar* getNameOfMonth( gint index )
+{
+  gchar *number, monthName[50];
+  struct tm tmonth;
+
+  if ( (index < 1) || (index > 12) ) {
+    return NULL;
+  }
+
+  asprintf(&number, "%i", index );
+  strptime(number, "%m", &tmonth); 
+  strftime(monthName, sizeof(monthName), "%B", &tmonth);
+  free(number);
+
+  return strdup( monthName );
+}
+
+/* returns the index (between 1 and 12 ) of the given month,
+   identified by name */
+gint getMonthIndex( gchar *monthName )
+{
+  struct tm tmonth;
+
+  strptime(monthName, "%B", &tmonth); 
+
+  /* don't forget to add 1, since struct tm counts months 0 to 11 */
+  return ( tmonth.tm_mon + 1 );
+}
+
+
+
+/* set the display values for date and time in the SyncBox to the current time */
+void setDefaultSyncValues(gchar *description, gchar *timezone)
+{
+  GtkWidget *label;
+  GtkWidget *hour;
+  GtkWidget *minute;
+  GtkWidget *day;
+  GtkWidget *month;
+  GtkWidget *year;
+
+  struct tm *timeSet, timeSetStruct;
+  time_t t; /* for grabbing current time only */
+  gchar *TZdefault;
+  gchar *s, *oldtimezone;
+
+  timeSet = &timeSetStruct;
+
+  label = gtk_object_get_data( (GtkObject *) syncBox, "label" );
+  gtk_label_set_text( (GtkLabel *) label, description);
+
+  /* initialise time from sync time if syncing has started */
+  if ( timer == -1) {
+    oldtimezone = gtk_object_get_data( (GtkObject *) syncBox, "timezone"  );
+    extractSyncTime(timeSet);
+  }
+
+  gtk_object_set_data( (GtkObject *) syncBox, "timezone", (gpointer) timezone );
+
+  day = gtk_object_get_data( (GtkObject *) syncBox, "day" );
+  month = gtk_object_get_data( (GtkObject *) syncBox, "month" );
+  year = gtk_object_get_data( (GtkObject *) syncBox, "year" );
+  hour = gtk_object_get_data( (GtkObject *) syncBox, "hour" );
+  minute = gtk_object_get_data( (GtkObject *) syncBox, "minute" );
+
+  TZdefault = (gchar *)getenv("TZ");
+
+  /* assign timezone in which time is to be given, if not "Local". */
+  if(strcasecmp(timezone,"Local"))    
+    setenv("TZ",timezone,1);
+
+
+  /* initialise time from current time if syncing hasn't started yet */
+  if ( timer != -1 ) {
+    time(&t);
+    timeSet = localtime_r( &t, timeSet );
+  }
+
+  /* must read in timezone here, if we don't want to use localtime(&t) */
+  tzset();
+
+  /* initialise timeSet, setting timezone info */
+  /*  timeSet = localtime_r( &t, timeSet ); */
+
+  asprintf( &s, "%i", timeSet->tm_mday);
+  gtk_entry_set_text( GTK_ENTRY(GTK_COMBO(day)->entry), strdup(s) );
+  free( s );
+
+  s = getNameOfMonth( (timeSet->tm_mon) + 1 );
+  gtk_entry_set_text( GTK_ENTRY(GTK_COMBO(month)->entry), strdup(s) );
+  free( s );
+
+  asprintf( &s, "%i", (1900 + timeSet->tm_year) );
+  gtk_spin_button_set_value( (GtkSpinButton *)year, atoi(s) );
+ /* gtk_entry_set_text( GTK_ENTRY(GTK_COMBO(year)->entry), strdup(s) );*/
+  free( s );
+
+  asprintf( &s, "%.2i", timeSet->tm_hour);
+  gtk_entry_set_text( GTK_ENTRY(hour), strdup(s) );
+  free( s );
+
+  asprintf( &s, "%.2i", timeSet->tm_min);
+  gtk_entry_set_text( GTK_ENTRY(minute), strdup(s) );
+  free( s );
+
+  /* ensure user's default timezone is not lost */
+  if (TZdefault)
+    setenv("TZ",TZdefault,1);
+  else
+    unsetenv("TZ");
+}
+
+
+
+void Synchronise(gpointer clocklist)
+{
+  extern gint changed;
+  extern gint selectedRow;
+  GString *title, *msg;
+  gchar *button[]={"OK"};
+  GdkWindow *window;
+  gint width, height;
+  
+  gchar *description, *timezone;
+
+  if((selectedRow >= 0) && (selectedRow < ((GtkCList *)clocklist)->rows) ) {
+    
+    gtk_clist_get_text( (GtkCList *) clocklist, selectedRow, 0, &description);    
+    timezone=gtk_clist_get_row_data(( GtkCList *)clocklist, selectedRow);
+
+    /* set sync values to current time */
+    setDefaultSyncValues(description, timezone);
+    
+    if ( timer != -1 ) {
+
+      /* freeze timer */
+      stop_timer();
+
+      /* adjust size of window to fit syncbox */
+      window = gtk_widget_get_parent_window( (GtkWidget *) syncBox );
+      gdk_window_get_size(window, &width, &height);
+      gdk_window_resize( window, width, height + SYNCBOX_HEIGHT );
+    }
+
+    /* and change display to correspond to given time */
+    gtk_widget_show( (GtkWidget *) syncBox );
+
+  }
+  else {
+    title = g_string_new("Delete Zone");
+    msg = g_string_new("No zone chosen for synchronising.");
+
+    do_dialog(title->str, msg->str, 1, button, 1, NULL, NULL, TRUE);
+    g_string_free(msg,TRUE);
+    g_string_free(title,TRUE);
+  }
+}
+
+/* reads the values set in the syncBox fields and turns them into
+   a struct tm time. */
+struct tm *extractSyncTime( struct tm *tp)
+{
+  int newDay, newMonth, newYear, newHour, newMinute;
+  
+  GtkWidget *hour;
+  GtkWidget *minute;
+  GtkWidget *day;
+  GtkWidget *month;
+  GtkWidget *year;
+
+  gchar *timezone;
+
+  time_t t; /* for initialising timezone via time() only! */
+  struct tm *timeSet, timeSetStruct;
+  gchar *TZdefault;
+  gchar *s;
+
+  timeSet = tp; /*&timeSetStruct;*/
+
+  day = gtk_object_get_data( (GtkObject *) syncBox, "day" );
+  month = gtk_object_get_data( (GtkObject *) syncBox, "month" );
+  year = gtk_object_get_data( (GtkObject *) syncBox, "year" );
+  hour = gtk_object_get_data( (GtkObject *) syncBox, "hour" );
+  minute = gtk_object_get_data( (GtkObject *) syncBox, "minute" );
+
+  newDay = atoi( gtk_entry_get_text( GTK_ENTRY(GTK_COMBO(day)->entry) ) );
+  /* don't forget to knock 1 off, since struct tm counts months 0 to 11 */
+  newMonth = getMonthIndex( gtk_entry_get_text( GTK_ENTRY(GTK_COMBO(month)->entry) ) ) - 1;
+  /*  newYear = atoi( gtk_entry_get_text( GTK_ENTRY(GTK_COMBO(year)->entry) ) ) - 1900; */
+  newYear = gtk_spin_button_get_value_as_int( (GtkSpinButton *) year ) - 1900;
+  printf("change year to %i (%i)\n",gtk_spin_button_get_value_as_int( (GtkSpinButton *) year) , newYear );
+  newHour = atoi( gtk_entry_get_text( GTK_ENTRY(hour) ) );
+  newMinute = atoi( gtk_entry_get_text( GTK_ENTRY(minute) ) );
+
+
+  TZdefault = (gchar *)getenv("TZ");
+    
+  /* assign timezone in which time is to be given, if not "Local". */
+  timezone = gtk_object_get_data( (GtkObject *) syncBox, "timezone" );
+  if(strcasecmp(timezone,"Local"))    
+    setenv("TZ",timezone,1);
+
+  /* initialise timeSet, setting timezone info */
+  time(&t);
+  tzset();
+  timeSet = localtime_r( &t, timeSet ); 
+
+  /* set new day to get proper daylight savings calculations */  
+  timeSet->tm_mday = newDay;
+  timeSet->tm_mon = newMonth;
+  timeSet->tm_year = newYear;
+  timeSet->tm_hour = newHour;
+  timeSet->tm_min = newMinute;
+  printf("in initial year %i, time is %s and t=%li\n", timeSet->tm_year, asctime(timeSet), t );
+
+  /* reset timeSet to time on new day, to make sure daylight savings is set properly */
+  /*  t = mktime( timeSet );
+
+  timeSet = localtime_r( &t, timeSet ); 
+  printf("in middle year %i, time is %s (%s) and t=%li\n", timeSet->tm_year, asctime(timeSet), ctime(&t), t );
+  */
+  /* and set new time (set everything just to be sure) */
+  /*  timeSet->tm_mday = newDay;
+  timeSet->tm_mon = newMonth;
+  timeSet->tm_year = newYear;
+  timeSet->tm_hour = newHour;
+  timeSet->tm_min = newMinute;
+
+  /* set seconds to zero for neatness */
+  /*  timeSet->tm_sec = 0;
+
+  t = mktime( timeSet );
+
+  printf("in final year %i, time is %s (%s) and t=%li\n", timeSet->tm_year, asctime(timeSet), ctime(&t), t );
+*/
+  /* ensure user's default timezone is not lost */
+  if (TZdefault)
+    setenv("TZ",TZdefault,1);
+  else
+    unsetenv("TZ");
+
+  /* note: t crashes (mktime returns -1) at 6:45am, 14 Dec 1901
+     At 6:46am, t=-2147483640 (2^31=2147483648) - 32bit int limitation :(  useless! */
+  return timeSet;
+}
+
+
+/* callback function to be run if any of the sync fields are changed.
+   Updates the times in each zone to the new sync time. 
+   The changed field is referenced as field, but is not used as such.
+*/
+void synchroniseTimes( GtkWidget *field, gpointer clocklist)
+{
+  struct tm timeStruct, *tp;
+  tp = &timeStruct;
+
+  /* grab sync time */
+  tp = extractSyncTime(tp);
+  printf("syncing to %s\n", asctime(tp) );
+  /* and display it */
+  SetToGivenTime( clocklist, tp ); 
+  
+}
+
+
+/* after done synchronising zones, return back to current time */
+void unsynchronise( GtkWidget *button, gpointer clocklist)
+{
+  GdkWindow *window;
+  gint width, height;
+
+  SetTime( clocklist );
+  gtk_widget_hide( (GtkWidget *) syncBox );
+  
+  /* adjust window to normal size */
+  window = gtk_widget_get_parent_window( (GtkWidget *) syncBox );
+  gdk_window_get_size(window, &width, &height);
+  gdk_window_resize( window, width, height - SYNCBOX_HEIGHT );
+
+  timer = start_timer( clocklist );
+}
+
+
+/* ensure we go through the same save routine when quitting from the menu (C-Q)
+   or by pressing the window's 'close' button */
+static void send_clock_quit( gpointer clocklist )
+{
+  GdkEvent event;
+  gint return_val;
+  extern gint OKtoQuit;
+
+  gtk_signal_emit_by_name((GtkObject *) gtk_widget_get_toplevel((GtkWidget *)clocklist), 
+			  "delete_event", &event, &return_val);
+
+  /* why didn't the above send "delete", which then sends "destroy"??
+     Have to "destroy" by hand...   */
+  if(OKtoQuit)
+    gtk_main_quit();
+  else
+    OKtoQuit=1;
+}
+
+/* save the config data when quitting, if necessary */
+gint worldclock_quit(GtkWidget *widget,
+		     GdkEvent  *event,
+		     gpointer   clocklist )
+{
+  extern gint changed;
+  extern gint OKtoQuit;
+  extern GString *configfile;
+  gint choice;
+
+  gchar *title="Save Zones";
+  GString *msg;
+  gchar *buttons3[] =  { "Yes", "No", "Cancel" };
+  gchar *buttons2[] =  { "Yes", "No" };
+
+  if(changed) {
+    msg = g_string_new(NULL);
+    g_string_sprintf(msg," Do you want to save your modified zone list? ");
+    choice = do_dialog(title, msg->str, 3, buttons3, 1, NULL, NULL, TRUE);
+    g_string_free(msg,TRUE);
+    if(choice==1) {  /* yes, save */
+      if (!SaveZones(clocklist)) {
+	msg = g_string_new(NULL);
+	g_string_sprintf(msg," Error saving zone file \"%s\": \n %s \n\n Continue quitting? ",
+			 configfile->str, g_strerror(errno));
+	choice = do_dialog(title, msg->str, 2, buttons2, 1, NULL, NULL, TRUE);
+	g_string_free(msg,TRUE);
+	if(choice==2) {  /* no, don't quit if there was an error */
+	  OKtoQuit=0;    
+	  return TRUE;
+	}
+      }
+      OKtoQuit=1;
+      return FALSE;
+    }
+    else if (choice==2) { /* no, don't save */
+      OKtoQuit=1;
+      return FALSE;
+    }
+    else {
+      OKtoQuit=0;    
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+
+gint CodeInList(gchar *code, GSList *List)
+{
+  /* can't use g_slist_find, unfortunately, since the data in the list is both the
+     country code and (unknown) country name
+  */
+
+  GSList *item;
+
+  item = List;
+  while (item) {
+    if ( ! strcmp(code,((NameCodeType *)item->data)->code) )
+      return TRUE;  /* found match */
+    item = item->next;
+  }
+  return FALSE;
+}
+
+GSList* AddNameCodeEntry(gchar *code, gchar *name, GSList *List)
+{
+  NameCodeType *entry;
+ 
+  entry = g_malloc0(sizeof(NameCodeType));
+  if(!entry)
+    g_print("Could not create list: %s",g_strerror(errno));
+  entry->name = g_strdup(name);
+  entry->code = g_strdup(code);
+  List = g_slist_append(List, (gpointer)entry);
+
+  /* we don't free entry here do we?  It's on record and is only to be freed when
+     the item is released from the list */
+  return List;
+}
+
+/* the documentation is not too clear about allocating and free lists */
+/* does g_slist_free deallocate all the links in the list, or just the first? */
+/* I will assume it does the entire list */
+void  ClearNameCodeList(GSList **List) 
+{
+  GSList *item;
+
+  if(*List) {
+    item = *List;
+    while (item) {
+      g_free( ((NameCodeType *)item->data)->name );
+      g_free( ((NameCodeType *)item->data)->code );
+      item = item->next;
+    }
+    g_slist_free(*List);
+  }
+  *List=NULL;
+}
+
+/* for given continent, find corresponding countries as identified in ZONE_TABLE
+   and prepare list of country name using COUNTRY_TABLE
+*/
+
+GSList* FetchCountries(gchar *continent)
+{
+  FILE *fpc, *fpz;
+  GString *title, *msg;
+  gchar *button[]={"OK"};
+  gchar line[500];
+  gchar *codec, *codez, *name;
+  GSList *Countries;
+  
+  if (strlen(continent)==0 )
+    return NULL;
+
+  if ( !(fpz=fopen(ZONE_TABLE,"r")) ) {  
+    title = g_string_new("Read Zone Table");
+    msg = g_string_new(NULL);
+    g_string_sprintf(msg," Error reading zone table \"%s\": \n %s \nHow very sad.\n",
+		     ZONE_TABLE , g_strerror(errno) );
+    /* note: the do_dialog window cannot yet be made non-modal
+       We'd have to do it by hand to do that */
+    do_dialog(title->str, msg->str, 1, button, 1, NULL, NULL, TRUE);
+    g_string_free(msg,TRUE);
+    g_string_free(title,TRUE);
+  }
+  if ( !(fpc=fopen(COUNTRY_TABLE,"r")) ) {  
+    title = g_string_new("Read Zone Table");
+    msg = g_string_new(NULL);
+    g_string_sprintf(msg," Error reading country table \"%s\": \n %s \nHow very sad.\n",
+		     COUNTRY_TABLE , g_strerror(errno) );
+    /* note: the do_dialog window cannot yet be made non-modal
+       We'd have to do it by hand to do that */
+    do_dialog(title->str, msg->str, 1, button, 1, NULL, NULL, TRUE);
+    g_string_free(msg,TRUE);
+    g_string_free(title,TRUE);
+  }
+
+  Countries=NULL;
+  while(fgets(line,500,fpz)) {
+    if (line[0] != '#') {
+      
+      /* check for continent in TZ value (third item on the line in ZONE_TABLE)
+	 Also read country code at beginning of zone table entry.
+	 Strictly this is only 2 characters, but I will allow for a whole string
+	 (in my opinion 3 character would be more meaningful.  The standard sux */
+      sscanf(line,"%as %*s %as",&codez,&name);
+      if(strstr(name,continent)) {
+	if(!CodeInList(codez,Countries)) {
+	  g_free(name);
+	  rewind(fpc);
+	  while(fgets(line,500,fpc)) {
+	    if (line[0] != '#') {
+
+	      /* first, identify country */
+	      if(sscanf(line,"%as",&codec)==1) {
+		if (!strcmp(codez,codec)) {
+
+		  /* then extract name as entire string to \0 after tab */
+		  /* (first make sure \n in line is reset to \0) */
+		  name = (gchar *) strchr(line,'\n');
+		  *name = '\0';
+		  name = (gchar *) strchr(line,'\t');
+		  name++;
+
+		  Countries = AddNameCodeEntry(codec,name,Countries);
+		}
+		g_free(codec);
+	      }	
+	    }
+	  }  
+	}
+      }
+      else
+	g_free(name);
+      g_free(codez);
+    }
+  }
+  fclose(fpc);
+  fclose(fpz);
+
+  return Countries;
+}
+
+
+
+/* from given country code ("*country"), find list of regions in ZONE_TABLE */
+/* input: country is the two-letter country code from ISO3166 */
+GSList* FetchRegions(gchar *country)
+{
+  FILE *fp;
+  GString *title, *msg;
+  gchar *button[]={"OK"};
+  gchar line[500];
+  gchar *code, *TZvalue, *region, *ptr;
+  GSList *Regions;
+  
+  if (strlen(country)==0 )
+    return NULL;
+
+  if ( !(fp=fopen(ZONE_TABLE,"r")) ) {  
+    title = g_string_new("Read Zone Table");
+    msg = g_string_new(NULL);
+    g_string_sprintf(msg," Error reading zone table \"%s\": \n %s \nHow very sad.\n",
+		     ZONE_TABLE , g_strerror(errno) );
+    /* note: the do_dialog window cannot yet be made non-modal
+       We'd have to do it by hand to do that */
+    do_dialog(title->str, msg->str, 1, button, 1, NULL, NULL, TRUE);
+    g_string_free(msg,TRUE);
+    g_string_free(title,TRUE);
+  }
+
+  Regions=NULL;
+  while(fgets(line,500,fp)) {
+    if (line[0] != '#') {
+      
+      /* check for entries corresponding to country code value 
+	 (first item on the line in ZONE_TABLE)
+	 Get name of region from third item on the line. */
+      /* alternatively we may want to get the description from the optional
+	 fourth item, where available.  Worry about that some other time */
+      sscanf(line,"%as %*s %as",&code,&TZvalue);
+
+      if(!strcmp(code,country)) {
+
+	/* region name is in format:  continent/region
+	   Extract the region part from the continent */
+	ptr = (gchar *) strchr(TZvalue,'/');
+	if(ptr)
+	  region = g_strdup((gchar*)(ptr+1));
+	else
+	  region = g_strdup(TZvalue);
+
+	/* Some regions have an underscore '_' in place of space */
+	/* convert these to a real space */
+	while( (ptr=(gchar*)strchr(region,'_')) ) 
+	  *ptr = ' ';
+
+	if(!CodeInList(TZvalue,Regions))
+	  Regions = AddNameCodeEntry(TZvalue,region,Regions);
+	g_free(region);
+      }
+      g_free(TZvalue);
+      g_free(code);
+    }
+  }
+  fclose(fp);
+
+  return Regions;
+}
+
+
+
+
+typedef struct AddZoneStruct {
+  GtkWidget *clocklist;
+  GtkWidget *countryCList;
+  GtkWidget *regionCList;
+  GtkWidget *DescriptionEntry;
+  GtkWidget *TZEntry;
+  GString *continent;
+  GString *country;
+  gint row;
+} AddZoneStruct;
+
+
+
+void UpdateCountries(GtkWidget *ContinentCList,
+		     gint row,
+		     gint column,
+		     GdkEventButton *event,
+		     gpointer ZoneData)
+{
+  gchar *continent, *ptr;
+  GSList *Countries, *item;
+  gchar *rowdata[1];
+  gint newRow;
+  GtkCList *clist;
+
+  gtk_clist_get_text( (GtkCList *) ContinentCList, row, 0, &ptr);
+
+  /* check value of continent here  */
+  continent = g_strdup(ptr);
+  /* change "Americas" to "America" by wiping out the 's' */
+  if(!strcmp(continent,"Americas"))
+    continent[7]='\0';
+
+  /* similarly remove " Ocean" in "Pacific Ocean", etc
+     by making the ' ' a null character */
+  ptr = (gchar *) strchr(continent,' ');
+  if(ptr)
+    *ptr='\0';
+
+  clist = (GtkCList *) ((AddZoneStruct*)ZoneData)->countryCList;
+  Countries=FetchCountries(continent);
+  gtk_clist_freeze( clist );
+  gtk_clist_clear( clist ); 
+  item = Countries;
+  while(item) {
+    rowdata[0]=g_strdup( ((NameCodeType *)item->data)->name);
+    newRow=gtk_clist_append(clist, rowdata);
+    gtk_clist_set_row_data( clist, newRow, 
+			    g_strdup(((NameCodeType *)item->data)->code));
+    g_free(rowdata[0]);
+    item = item->next;
+  }
+  ClearNameCodeList(&Countries);
+  g_free(continent);
+  gtk_clist_select_row( clist,0,0); 
+  gtk_clist_thaw( clist );
+
+}
+
+/*  Why does the scroll box get larger when you keep selecting a country?? */
+void UpdateRegions(GtkWidget *CountryCList,
+		   gint row,
+		   gint column,
+		   GdkEventButton *event,
+		   gpointer ZoneData)
+{
+  gchar *country;
+  GSList *Regions, *item;
+  gchar *rowdata[1];
+  gint newRow;
+  GtkCList *clist;
+
+  country = (gchar *) gtk_clist_get_row_data( (GtkCList *) CountryCList, row);
+
+  clist = (GtkCList *) ((AddZoneStruct*)ZoneData)->regionCList;
+  Regions=FetchRegions(country);
+  gtk_clist_freeze( clist );
+  gtk_clist_clear( clist ); 
+  item = Regions;
+  while(item) {
+    rowdata[0]=g_strdup( ((NameCodeType *)item->data)->name);
+    newRow=gtk_clist_append(clist, rowdata);
+    gtk_clist_set_row_data( clist, 
+			    newRow, g_strdup(((NameCodeType *)item->data)->code));
+    g_free(rowdata[0]);
+    item = item->next;
+  }
+  ClearNameCodeList(&Regions);
+  gtk_clist_thaw( clist );
+}
+
+void SelectRegion(GtkWidget *RegionCList,
+		  gint row,
+		  gint column,
+		  GdkEventButton *event,
+		  gpointer ZoneData)
+{
+  gchar *description, *TZ;
+
+  gtk_clist_get_text( (GtkCList *) RegionCList, row, 0, &description);
+  TZ = (gchar *) gtk_clist_get_row_data( (GtkCList *) RegionCList, row);
+  
+  gtk_entry_set_text( (GtkEntry *)((AddZoneStruct*)ZoneData)->DescriptionEntry, 
+		      description);
+  gtk_entry_set_text( (GtkEntry *)((AddZoneStruct*)ZoneData)->TZEntry, TZ);
+}
+
+/* when left mouse button is double-clicked,
+   send "key-pressed-event" to one of the Entry boxes 
+   which will be handled by adding the given zone.
+   We're assuming here that "select-row" preceded the double-click event */
+gint ButtonPressedInRegionList(GtkWidget *regionlist, 
+			       GdkEventButton *event, gpointer ZoneData)
+{
+  GdkEventKey *KeyEvent;
+  gint return_val;
+  
+  if( (event->type==GDK_2BUTTON_PRESS) && (event->button==1)) {
+    KeyEvent = (GdkEventKey*)g_malloc(sizeof(GdkEventKey));
+    KeyEvent->keyval=GDK_Return;
+    gtk_signal_emit_by_name( GTK_OBJECT( ((AddZoneStruct*)ZoneData)->TZEntry ),
+			     "key-press-event", (GdkEvent*)KeyEvent, &return_val);
+    g_free(KeyEvent);
+    return TRUE;
+  }
+  return FALSE;
+}
+
+
+
+/* zones are selected according to the method used in tzselect:
+   First the continent is chosen, then, if necessary, the country is chosen,
+   with countries being identified from the two-letter code in the
+   entries of  [/usr/share/zoneinfo/]zone.tab (and country names taken from 
+   iso3166.tab)  Then the region (or city) of that country is identified, from 
+   zone.tab.
+*/
+
+void  PrepareZoneNotes(GtkWidget **ZoneNotes, AddZoneStruct *Zone)
+{
+  GtkWidget *label;
+  GtkWidget *scrolled_window;
+  GtkWidget *continentCList, *countryCList, *regionCList;
+  gchar *ContinentLabel="Continents";
+  gchar *CountryLabel="Countries";
+  gchar *RegionLabel="Regions";
+  gchar *rowdata[1];
+  gint row, i;
+
+  *ZoneNotes = gtk_notebook_new ();
+  gtk_widget_show(*ZoneNotes);
+
+  label = gtk_label_new (ContinentLabel);
+
+
+  /* Create a scrolled window to pack the CList widget into */
+  /* can't decide if I want it or not, for continents at least */
+  /*  scrolled_window = gtk_scrolled_window_new (NULL, NULL);
+      gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scrolled_window),
+      GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+      gtk_widget_show (scrolled_window);
+  */
+
+  /* list of continents */
+  continentCList = gtk_clist_new_with_titles( 1, NULL);
+  gtk_clist_column_titles_hide( (GtkCList *)continentCList );
+  for(i=0;i<Ncontinents;i++) {
+    rowdata[0]=g_strdup(continents[i]);
+    row=gtk_clist_append( (GtkCList *) continentCList,rowdata);
+    g_free(rowdata[0]);
+  }
+  /*  gtk_container_add(GTK_CONTAINER(scrolled_window), continentCList);*/
+  gtk_widget_show (continentCList);
+  gtk_notebook_append_page (GTK_NOTEBOOK (*ZoneNotes), continentCList, label);
+
+
+  /* list of countries */
+  label = gtk_label_new (CountryLabel);
+  scrolled_window = gtk_scrolled_window_new (NULL, NULL);
+  gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scrolled_window),
+				  GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  gtk_widget_show (scrolled_window);
+
+  countryCList = gtk_clist_new_with_titles( 1, NULL);
+  Zone->countryCList = countryCList;
+  gtk_clist_column_titles_hide( (GtkCList *)continentCList );
+  gtk_signal_connect(GTK_OBJECT( continentCList), "select_row",
+		     GTK_SIGNAL_FUNC(UpdateCountries),
+		     (gpointer)Zone);
+  gtk_widget_show (countryCList);
+  gtk_container_add(GTK_CONTAINER(scrolled_window), countryCList);
+  gtk_notebook_append_page (GTK_NOTEBOOK (*ZoneNotes), scrolled_window, label);
+
+
+  /* list of cities and regions */
+  label = gtk_label_new (RegionLabel);
+  scrolled_window = gtk_scrolled_window_new (NULL, NULL);
+  /* for some reason the horizontal scroll bars are turning themselves on
+     when policy is AUTOMATIC.  They shouldn't really be needed, so
+     turn them off.  (alternative is to manually set the window size).
+     Likewise for region list below, also */
+  gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scrolled_window),
+				  GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  gtk_widget_show (scrolled_window);
+
+  regionCList = gtk_clist_new_with_titles( 1, NULL);
+  Zone->regionCList = regionCList;
+  gtk_clist_column_titles_hide( (GtkCList *)regionCList );
+  gtk_signal_connect(GTK_OBJECT( countryCList), "select_row",
+		     GTK_SIGNAL_FUNC(UpdateRegions),
+		     (gpointer)Zone);
+  gtk_signal_connect(GTK_OBJECT(regionCList), "select_row",
+		     GTK_SIGNAL_FUNC(SelectRegion),
+		     (gpointer)Zone);
+  gtk_signal_connect(GTK_OBJECT(regionCList),
+		     "button_press_event",
+		     GTK_SIGNAL_FUNC(ButtonPressedInRegionList),
+		     (gpointer)Zone);
+  gtk_widget_show (regionCList);
+  gtk_container_add(GTK_CONTAINER(scrolled_window), regionCList);
+  gtk_notebook_append_page (GTK_NOTEBOOK (*ZoneNotes), scrolled_window, label);
+
+  /* select Sydney, Australia (continent #6) as default */
+  /* note, gtk_clist_moveto doesn't seem to do anything ;/  */
+  gtk_clist_select_row( (GtkCList *)continentCList,6,0);
+  gtk_clist_select_row( (GtkCList *)countryCList,0,0);
+  gtk_clist_select_row( (GtkCList *)regionCList,3,0); 
+  /*  gtk_clist_moveto( (GtkCList *)continentCList, 6, 0, 0.5, 0.0 );*/
+}
+
+
+void AddZoneToList(GtkWidget *w, gpointer NewZone)
+{
+  gchar *rowdata[2];
+  gint row;
+  extern gint changed;
+  GtkCList *clist;
+  GString *description;
+  GString *TZ;
+
+  description = g_string_new(
+			     gtk_entry_get_text((GtkEntry *)((AddZoneStruct *)NewZone)->DescriptionEntry));
+  TZ = g_string_new(
+		    gtk_entry_get_text((GtkEntry *)((AddZoneStruct *)NewZone)->TZEntry));
+
+  clist =  (GtkCList *)((AddZoneStruct *)NewZone)->clocklist;
+
+  rowdata[0]=g_strdup(description->str);
+  rowdata[1]=NULL;
+  row=gtk_clist_append( clist,rowdata);
+  g_free(rowdata[0]);
+  gtk_clist_moveto( clist, row, 0, 1.0, 0.0 );
+
+  /* check a timezone was given, if not, set to GMT */
+  /* GST-0 is the "formal" TZ value for GMT */
+  if ( TZ->len == 0 )
+    g_string_assign(TZ,"GST-0");
+
+  gtk_clist_set_row_data( clist, row, g_strdup(TZ->str) );
+
+  SetTime((gpointer)clist);
+  changed=1;
+
+  g_string_free(description,TRUE);
+  g_string_free(TZ,TRUE);
+}
+
+void DestroyWindow(GtkWidget *w, gpointer window)
+{
+  gtk_widget_destroy((GtkWidget *)window);
+}
+
+/* how about getting the string upon pressing OK or <enter> instead? */
+/*void GetDescriptionString(GtkWidget *EntryDescription, gpointer NewZone)
+  {
+  g_string_assign( ((AddZoneStruct *)NewZone)->description,
+  gtk_entry_get_text((GtkEntry *)EntryDescription));
+  }
+
+  void GetTZstring(GtkWidget *EntryTZ, gpointer NewZone)
+  {
+  g_string_assign( ((AddZoneStruct *)NewZone)->TZ,
+  gtk_entry_get_text((GtkEntry *)EntryTZ));
+  }
+*/
+
+gint GotOK(GtkWidget *w, GdkEventKey *event,  gpointer Button)
+{
+  GdkEvent *dummyevent;
+  gint return_val;
+
+  if(event->keyval==GDK_Return) {
+    dummyevent=(GdkEvent*)g_malloc(sizeof(GdkEvent));
+    gtk_signal_emit_by_name((GtkObject *) Button,
+			    "clicked", &dummyevent, &return_val);
+    g_free(dummyevent);
+    return TRUE;
+  }
+  return FALSE;
+}
+
+
+void AddZone( gpointer clocklist )
+{
+  GtkWidget *window; 
+  GtkWidget *vbox, *hbox;
+  GtkWidget *AddButton, *DoneButton;
+  GtkWidget *ZoneNotes;
+  GtkWidget *Frame;
+  GtkWidget *EntryDescription, *EntryTZ;
+  static AddZoneStruct NewZone;
+
+  NewZone.clocklist = (GtkWidget *) clocklist;
+
+  EntryDescription = gtk_entry_new();
+  NewZone.DescriptionEntry = (GtkWidget *)EntryDescription;
+  EntryTZ = gtk_entry_new();
+  NewZone.TZEntry = (GtkWidget *) EntryTZ;
+
+  window = gtk_window_new(GTK_WINDOW_DIALOG);
+  gtk_window_set_title ((GtkWindow *)window, "Add Time Zone");
+  gtk_window_position((GtkWindow *)window,GTK_WIN_POS_CENTER);
+  gtk_container_set_border_width (GTK_CONTAINER (window), 5);
+  
+  vbox = gtk_vbox_new (FALSE, 0);
+  gtk_container_add (GTK_CONTAINER (window), vbox);
+  gtk_widget_show (vbox);
+
+
+  /* display zone choices as notebook:
+     Continents on one page, cities/countries on other
+  */
+  PrepareZoneNotes(&ZoneNotes,&NewZone);
+  gtk_box_pack_start (GTK_BOX (vbox), ZoneNotes, TRUE, FALSE, 5);
+
+
+  /* place zone in text entry box (allowing for manual entry if desired) */
+  hbox = gtk_hbox_new (FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (vbox), hbox, TRUE, FALSE, 5);
+  gtk_widget_show (hbox);
+
+
+  /* box for text description of zone */
+  Frame = gtk_frame_new ("Description");
+  gtk_frame_set_shadow_type( (GtkFrame *)Frame, GTK_SHADOW_NONE); 
+  gtk_box_pack_start (GTK_BOX (hbox), Frame, TRUE, FALSE, 5);
+  gtk_widget_show (Frame);
+  /*  gtk_signal_connect (GTK_OBJECT (EntryDescription), "changed",
+      GTK_SIGNAL_FUNC (GetDescriptionString), (gpointer)&NewZone );*/
+  gtk_container_add (GTK_CONTAINER (Frame), EntryDescription);
+  /* where did the entry boxes get their default size from?
+     Not setting the size here (and below for TZ) makes the dialog box too large 
+     Arguably too large, anyway - this is a question of taste of course */
+  gtk_widget_set_usize( GTK_WIDGET(EntryDescription),125,0);
+  gtk_widget_show (EntryDescription);
+
+
+  /* box for TZ value of zone */
+  Frame = gtk_frame_new ("TZ value");
+  gtk_frame_set_shadow_type( (GtkFrame *)Frame, GTK_SHADOW_NONE); 
+  gtk_box_pack_start (GTK_BOX (hbox), Frame, TRUE, FALSE, 5);
+  gtk_widget_show (Frame);
+  /*  gtk_signal_connect (GTK_OBJECT (EntryTZ), "changed",
+      GTK_SIGNAL_FUNC (GetTZstring), (gpointer)&NewZone );*/
+  gtk_container_add (GTK_CONTAINER (Frame), EntryTZ);
+  gtk_widget_set_usize( GTK_WIDGET(EntryTZ),125,0);
+  gtk_widget_show (EntryTZ);
+
+  /* buttons to accept zone, or exit */
+  hbox = gtk_hbox_new (FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (vbox), hbox, TRUE, FALSE, 5);
+  gtk_widget_show (hbox);
+
+  AddButton = gtk_button_new_with_label ("Add Zone");
+  gtk_signal_connect (GTK_OBJECT (AddButton), "clicked",
+		      GTK_SIGNAL_FUNC (AddZoneToList), (gpointer)&NewZone );
+  gtk_box_pack_start (GTK_BOX (hbox), AddButton, TRUE, FALSE, 0);
+  gtk_signal_connect (GTK_OBJECT (EntryDescription), "key-press-event",
+		      GTK_SIGNAL_FUNC (GotOK), (gpointer)AddButton);
+  gtk_signal_connect (GTK_OBJECT (EntryTZ), "key-press-event",
+		      GTK_SIGNAL_FUNC (GotOK), (gpointer)AddButton);
+  gtk_widget_show (AddButton);
+
+  DoneButton = gtk_button_new_with_label ("Done");
+  gtk_signal_connect (GTK_OBJECT (DoneButton), "clicked",
+		      GTK_SIGNAL_FUNC (DestroyWindow), (gpointer)window);
+  gtk_box_pack_start (GTK_BOX (hbox), DoneButton, TRUE, FALSE, 0);
+  gtk_widget_show (DoneButton);
+
+  gtk_widget_show(window); 
+}
+
+void WriteZoneDescription(GtkWidget *w, gpointer Zone)
+{
+  extern gint changed;
+  GString *description;
+
+  description = g_string_new(
+			     gtk_entry_get_text((GtkEntry *)((AddZoneStruct *)Zone)->DescriptionEntry));
+
+  gtk_clist_set_text( (GtkCList *)((AddZoneStruct *)Zone)->clocklist,
+		      ((AddZoneStruct *)Zone)->row, 0,
+		      description->str);
+  changed=1;
+  DestroyWindow(w,gtk_widget_get_ancestor(w, GTK_TYPE_WINDOW));
+}
+  
+void ChangeZoneDescription(gpointer clocklist)
+{
+  gchar *description;
+  GtkWidget *window, *vbox, *hbox;
+  GtkWidget *DescriptionEntry, *OKButton, *CancelButton;
+  static AddZoneStruct Zone;
+  extern gint selectedRow;
+  GString *title, *msg;
+  gchar *button[]={"OK"};
+
+  if ( (selectedRow<0) ||(selectedRow >= ((GtkCList *)clocklist)->rows) ) {
+    /* is this dialog box useful? */
+    title = g_string_new("Change Description");
+    msg = g_string_new("No zone chosen for changing.");
+    /* note: the do_dialog window cannot yet be made non-modal
+       We'd have to do it by hand to do that */
+    do_dialog(title->str, msg->str, 1, button, 1, NULL, NULL, TRUE);
+    g_string_free(msg,TRUE);
+    g_string_free(title,TRUE);
+    return;
+  }
+
+  gtk_clist_get_text( (GtkCList *) clocklist, selectedRow, 0, &description);
+
+  Zone.clocklist = (GtkWidget *) clocklist;
+  Zone.row = selectedRow;
+
+  window = gtk_window_new(GTK_WINDOW_DIALOG);
+  gtk_window_set_title ((GtkWindow *)window, "Change Zone Description");
+  gtk_window_position((GtkWindow *)window,GTK_WIN_POS_CENTER);
+  gtk_container_set_border_width (GTK_CONTAINER (window), 5);
+  
+  vbox = gtk_vbox_new (FALSE, 0);
+  gtk_container_add (GTK_CONTAINER (window), vbox);
+  gtk_widget_show (vbox);
+  
+  OKButton = gtk_button_new_with_label ("OK");
+  DescriptionEntry = gtk_entry_new();
+  Zone.DescriptionEntry = DescriptionEntry;
+  gtk_entry_set_text( (GtkEntry *) DescriptionEntry, description);
+  gtk_signal_connect (GTK_OBJECT (DescriptionEntry), "key-press-event",
+		      GTK_SIGNAL_FUNC (GotOK), (gpointer)OKButton);
+  gtk_container_add (GTK_CONTAINER (vbox), DescriptionEntry);
+  gtk_widget_show (DescriptionEntry);
+
+  hbox = gtk_hbox_new (FALSE, 0);
+  gtk_box_pack_start (GTK_BOX (vbox), hbox, TRUE, FALSE, 5);
+  gtk_widget_show (hbox);
+
+  gtk_signal_connect (GTK_OBJECT (OKButton), "clicked",
+		      GTK_SIGNAL_FUNC (WriteZoneDescription), (gpointer)&Zone );
+  gtk_box_pack_start (GTK_BOX (hbox), OKButton, TRUE, FALSE, 0);
+  gtk_widget_show (OKButton);
+
+  CancelButton = gtk_button_new_with_label ("Cancel");
+  gtk_signal_connect (GTK_OBJECT (CancelButton), "clicked",
+		      GTK_SIGNAL_FUNC (DestroyWindow), (gpointer)window);
+  gtk_box_pack_start (GTK_BOX (hbox), CancelButton, TRUE, FALSE, 0);
+  gtk_widget_show (CancelButton);
+
+  gtk_widget_show(window); 
+}
+
+
+gint ButtonPressedInList(GtkWidget *clocklist, 
+			 GdkEventButton *event, gpointer data)
+{
+  extern gint selectedRow;
+
+  static GtkWidget *popup;
+  GtkItemFactory *item_factory;
+  gint nmenu_items = sizeof (popupmenu_items) / sizeof (popupmenu_items[0]);
+
+  if( (event->type==GDK_2BUTTON_PRESS) && (event->button==1)) {
+    ChangeZoneDescription(clocklist);
+    return TRUE;
+  }
+  /* attempting to identify when reorder has occurred
+     Will probably have to wipe this code 
+     else if ( (event->type==GDK_BUTTON_RELEASE) && (event->button==1)) {
+     g_print("released button 1 for row %d\n", selectedRow);
+     return TRUE;
+     }    
+     else if (event->button==1) {
+     g_print("pressed button 1 for row %d\n", selectedRow);
+     return FALSE;
+     }
+  */
+  else if (event->button==3) {
+
+    if(!popup) { /* create only once! */
+      item_factory = gtk_item_factory_new (GTK_TYPE_MENU, "<main>", NULL);
+      gtk_item_factory_create_items (item_factory, nmenu_items, popupmenu_items, (gpointer)clocklist);
+      popup = gtk_item_factory_get_widget (item_factory, "<main>");
+    }
+    gtk_menu_popup (GTK_MENU(popup), NULL, NULL, NULL, NULL,
+		    event->button, event->time);   
+    return TRUE;
+  }
+  return FALSE;
+}
+
+void initialiseSyncBoxLists()
+{
+  gint i;
+  gchar *number, *monthName;
+
+  /* days in month ( just 31 for now ) */
+  list31days = NULL;
+  for ( i=1; i<=31; i++ )  {
+    asprintf( &number, "%i", i );
+    list31days = g_list_append(list31days, strdup(number));
+    free(number);
+  }
+
+  /* months in year by name (as set by locale) */
+  listMonths = NULL;
+  for ( i=1; i<=12; i++ )  {
+    monthName = getNameOfMonth( i );
+    listMonths = g_list_append(listMonths, strdup(monthName));
+  }
+
+}
+
+/* find the length (in characters) of the longest entry in a GList
+   containing string data. */
+gint getLongestEntry(GList *list)
+{
+  GList *plist;
+  gint longest = 0;
+  gint length;
+  
+  plist = list;
+  while ( plist != NULL ) {
+    length = strlen( (gchar*)plist->data );
+    if ( length > longest )
+      longest = length;
+    plist = g_list_next(plist);
+  }
+  return longest;
+}
+
+
+/* construct the box in which the controls for synchronising dates will be 
+   found */
+GtkBox *constructSyncBox(gpointer clocklist)
+{
+  GtkWidget *box, *line, *set;
+  GtkWidget *button;
+
+  GtkWidget *label;
+  GtkWidget *hour;
+  GtkWidget *date, *time, *colon;
+  GtkWidget *minute;
+  GtkWidget *day;
+  GtkWidget *month;
+  GtkWidget *year;
+  GtkObject *adj;
+
+  initialiseSyncBoxLists();
+
+  box  = gtk_vbox_new (FALSE, 2);
+
+  line = gtk_hbox_new (FALSE, 1);
+
+  /* Zone name */
+  label = gtk_label_new("");
+  gtk_box_pack_start(GTK_BOX(line), label, TRUE, FALSE, 0);  
+  gtk_widget_show( label );
+
+  gtk_box_pack_start(GTK_BOX(box), line, FALSE, FALSE, 0);  
+  gtk_widget_show( line );
+
+
+  line = gtk_hbox_new (FALSE, 1);
+  set = gtk_hbox_new (FALSE, 1);
+  date = gtk_label_new("Date:");
+  gtk_box_pack_start(GTK_BOX(set), date, FALSE, FALSE, 0);  
+  gtk_widget_show( date );
+
+  day = gtk_combo_new();
+  gtk_combo_set_popdown_strings( GTK_COMBO(day), list31days) ;
+  gtk_widget_set_usize( day, CHAR_WIDTH*3, -1);
+  gtk_box_pack_start(GTK_BOX(set), day, FALSE, FALSE, 0);  
+  gtk_signal_connect (GTK_OBJECT( GTK_COMBO(day)->entry ), "activate",
+		      GTK_SIGNAL_FUNC (synchroniseTimes),  (gpointer)clocklist);
+  gtk_widget_show( day );
+
+  month = gtk_combo_new();
+  gtk_combo_set_popdown_strings( GTK_COMBO(month), listMonths) ;
+  /* not sure why an exact count works for the numbers, but not here.
+     Take two characters off to get "September" to fit snugly. */
+  gtk_widget_set_usize( month, (getLongestEntry(listMonths)-2)*CHAR_WIDTH, -1);
+  gtk_box_pack_start(GTK_BOX(set), month, FALSE, FALSE, 0);  
+  gtk_signal_connect (GTK_OBJECT (GTK_COMBO(month)->entry), "activate",
+		      GTK_SIGNAL_FUNC (synchroniseTimes),  (gpointer)clocklist);
+  gtk_widget_show( month );
+
+
+  /* The time functions only handle years up to 9999, I believe
+     so limit the year spin button accordingly */
+  adj = gtk_adjustment_new (0, -9999, 9999, 1, 5, 0);
+  year = gtk_spin_button_new ((GtkAdjustment *)adj, 0.1, 0);
+  gtk_spin_button_set_numeric( (GtkSpinButton *)year, TRUE );
+  /*  gtk_spin_button_set_wrap (GTK_SPIN_BUTTON (spinner), TRUE); */
+  gtk_spin_button_set_update_policy( (GtkSpinButton *)year, GTK_UPDATE_IF_VALID );
+  gtk_spin_button_set_shadow_type (GTK_SPIN_BUTTON (year), GTK_SHADOW_ETCHED_IN);
+  /*  year = gtk_combo_new();
+      gtk_combo_set_popdown_strings( GTK_COMBO(year), listYears) ;*/
+  gtk_widget_set_usize( year, CHAR_WIDTH*4, -1);
+  gtk_box_pack_start(GTK_BOX(set), year, FALSE, FALSE, 0);  
+  gtk_signal_connect (GTK_OBJECT(adj), "value_changed",
+		      GTK_SIGNAL_FUNC (synchroniseTimes),  (gpointer)clocklist);
+  gtk_widget_show( year );
+
+  gtk_box_pack_start(GTK_BOX(line), set, TRUE, FALSE, 0);  
+  gtk_widget_show( set );
+  
+
+  gtk_box_pack_start(GTK_BOX(box), line, FALSE, FALSE, 0);  
+  gtk_widget_show( line );
+
+
+  line = gtk_hbox_new (FALSE, 1);
+  set = gtk_hbox_new (FALSE, 1);
+  time = gtk_label_new("Time:");
+  gtk_box_pack_start(GTK_BOX(set), time, FALSE, FALSE, 0);  
+  gtk_widget_show( time );
+
+  hour = gtk_entry_new_with_max_length(2);
+  /*  gtk_combo_set_popdown_strings( GTK_COMBO(hour), listHours) ;*/
+  /* I'm not sure what the "proper" way to adjust the length of an input box
+     is.  I just want to restrict it to two characters.  By default it appears
+     stuck at 17 or so.  The only ready way I knew to fix it is with 
+     gtk_widget_set_usize.  I'm sure there's a Better Way... (that doesn't
+     require a spinbox) 
+     
+     One character seems 15 pixels in width.
+     I'm sure this is font-dependent grrr.
+     26 pixels works vertically (height of standard box), 
+     but -1 sets to default size, so no need to guess.
+  */
+  gtk_widget_set_usize( hour, CHAR_WIDTH*2, -1);
+  gtk_box_pack_start(GTK_BOX(set), hour, FALSE, FALSE, 0);  
+  gtk_signal_connect (GTK_OBJECT (hour), "activate",
+		      GTK_SIGNAL_FUNC (synchroniseTimes),  (gpointer)clocklist);
+  gtk_widget_show( hour );
+
+  colon = gtk_label_new(":");
+  gtk_box_pack_start(GTK_BOX(set), colon, FALSE, FALSE, 0);  
+  gtk_widget_show( colon );
+
+
+  minute = gtk_entry_new_with_max_length(2);
+  /*  gtk_combo_set_popdown_strings( GTK_COMBO(minute), listMinutes) ;*/
+  gtk_widget_set_usize( minute, CHAR_WIDTH*2, -1);
+  gtk_box_pack_start(GTK_BOX(set), minute, FALSE, FALSE, 0);  
+  gtk_signal_connect (GTK_OBJECT (minute), "activate",
+		      GTK_SIGNAL_FUNC (synchroniseTimes),  (gpointer)clocklist);
+  gtk_widget_show( minute );
+
+  gtk_box_pack_start(GTK_BOX(line), set, TRUE, FALSE, 0);  
+  gtk_widget_show( set );
+
+  gtk_box_pack_start(GTK_BOX(box), line, FALSE, FALSE, 0);  
+  gtk_widget_show( line );
+
+  line = gtk_hbox_new (TRUE, 1);
+  /* button to set to new time (for those who dislike the return button */
+  button = gtk_button_new_with_label("Update");
+  gtk_box_pack_start(GTK_BOX(line), button, TRUE, FALSE, 0);  
+  gtk_signal_connect (GTK_OBJECT (button), "clicked",
+		      GTK_SIGNAL_FUNC (synchroniseTimes),  (gpointer)clocklist);
+  gtk_widget_show (button);
+
+  /* button to close synchronisation, return to current time */
+  button = gtk_button_new_with_label("Done");
+  gtk_box_pack_start(GTK_BOX(line), button, TRUE, FALSE, 0);  
+  gtk_signal_connect (GTK_OBJECT (button), "clicked",
+		      GTK_SIGNAL_FUNC (unsynchronise),  (gpointer)clocklist);
+  gtk_widget_show (button);
+
+  gtk_box_pack_start(GTK_BOX(box), line, FALSE, FALSE, 0);  
+  gtk_widget_show( line );
+
+  gtk_object_set_data( (GtkObject *)box, "label", (gpointer) label);
+  gtk_object_set_data( (GtkObject *)box, "day", (gpointer) day);
+  gtk_object_set_data( (GtkObject *)box, "month", (gpointer) month);
+  gtk_object_set_data( (GtkObject *)box, "year", (gpointer) year);
+  gtk_object_set_data( (GtkObject *)box, "hour", (gpointer) hour);
+  gtk_object_set_data( (GtkObject *)box, "minute", (gpointer) minute);
+  
+  return (GtkBox *)box;
+}
+
+
+int main( int argc, char *argv[] )
+{
+  GtkWidget *window, *scrolled_window;
+  GtkWidget *main_vbox;
+  GtkWidget *menubar;
+  GtkWidget *clocklist;
+  gchar *titles[2] = { "Timezone", "Time&Date" };
+
+  g_print("\n");
+
+  gtk_init (&argc, &argv);
+  GetOptions(argc,argv);
+
+  window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
+  gtk_signal_connect (GTK_OBJECT (window), "destroy", 
+		      GTK_SIGNAL_FUNC (gtk_main_quit), 
+		      "WM destroy");
+  gtk_window_set_title (GTK_WINDOW(window), "gworldclock");
+  gtk_widget_set_usize (GTK_WIDGET(window), 300, 200);
+         
+  main_vbox = gtk_vbox_new (FALSE, 5);
+  gtk_container_border_width (GTK_CONTAINER (main_vbox), 1);
+  gtk_container_add (GTK_CONTAINER (window), main_vbox);
+  gtk_widget_show (main_vbox);
+    
+  /* Create a scrolled window to pack the CList widget into */
+  scrolled_window = gtk_scrolled_window_new (NULL, NULL);
+  gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scrolled_window),
+				  GTK_POLICY_AUTOMATIC, GTK_POLICY_ALWAYS);
+  
+  gtk_box_pack_end(GTK_BOX(main_vbox), scrolled_window, TRUE, TRUE, 0);
+  gtk_widget_show (scrolled_window);
+
+  clocklist = gtk_clist_new_with_titles( 2, titles);
+  gtk_clist_column_titles_passive( (GtkCList *)clocklist );
+  gtk_clist_set_column_width( (GtkCList *)clocklist,0,0);
+  gtk_clist_set_reorderable ( (GtkCList *)clocklist, TRUE);
+  gtk_signal_connect(GTK_OBJECT( clocklist), "select_row",
+		     GTK_SIGNAL_FUNC(select_row_callback),
+		     NULL);
+  
+  gtk_signal_connect(GTK_OBJECT(clocklist),
+		     "button_press_event",
+		     GTK_SIGNAL_FUNC(ButtonPressedInList),
+		     NULL);
+
+  gtk_clist_set_column_width (GTK_CLIST(clocklist), 0, 150);
+  gtk_container_add(GTK_CONTAINER(scrolled_window), clocklist);
+  start_clocks(clocklist);
+  gtk_widget_show (clocklist);
+
+  gtk_signal_connect (GTK_OBJECT (window), "delete_event", 
+		      GTK_SIGNAL_FUNC (worldclock_quit), (gpointer)clocklist);
+
+  /* set up menu */
+  get_main_menu (window, &menubar, clocklist);
+  gtk_box_pack_start (GTK_BOX (main_vbox), menubar, FALSE, TRUE, 0);
+  gtk_widget_show (menubar);
+         
+  /* stick the synchronise control panel at the top and hide it */
+  syncBox = constructSyncBox((gpointer)clocklist);
+  gtk_box_pack_start(GTK_BOX(main_vbox), (GtkWidget *)syncBox, FALSE, FALSE, 0);
+  gtk_widget_hide((GtkWidget *) syncBox );
+
+  /* calculate the time each second */
+  timer = start_timer( clocklist );
+
+  gtk_widget_show (window);
+  gtk_main ();
+         
+  return(0);
+}
+

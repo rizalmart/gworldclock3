@@ -1,0 +1,172 @@
+1.4.4	28 March 2005
+	* Create About Dialog using new API.
+	* Reconstructed AddZone dialog using GtkTreeModel instead of
+	  deprecated CList (zone.c). This fixes up the problem where the
+	  size of the scrolled window froze up after the first use (now it
+	  is adjusted as each continent or country is selected).
+	* Converted deprecated gtk_object_set_data to g_object_set_data (etc)
+	  (rendezvous.c).
+	* Used GtkComboBox instead of deprecated GtkCombo for the list of
+	  months in rendezvous.c
+	* At this point, there are no known deprecated GTK functions or
+	  objects used.	 Please submit a bug if you find one I missed.
+	  The 1.4 series will be complete once automatic resizing of the
+	  clock window has been fixed.
+	
+1.4.3	18 March 2005
+	* only use a seconds timer if seconds are in fact used in the display
+	  format, otherwise use a minute timer.
+	
+	
+1.4.2   24 February 2005
+	* Oops, should have checked other compiler warnings.
+	  Added #includes to timer.c and options.c.
+
+1.4.1	24 February 2005
+	* Use unsynchroniseFromDone() when using the Done button to leave
+	  Rendezvous. This toggles the Rendezvous action (in the menu),
+	  ensuring the Rendezvous state is kept consistent.
+	* #include <stdlib.h> in rendezvous.c to handle getenv() correctly.
+
+1.4.0	3 January 2005
+	* 1.4 is a complete overhaul to modernise the API, removing
+	  deprecated function calls.  In the interests of not missing
+	  Debian sarge, I will release it pointwise as each part of the
+	  revision is complete.	
+	* accepted fixes to tzwatch from Debian 1.3-5 (fixes handling of
+	date formats containing spaces)
+	* New option node doneLabel for rendezvous, under <gworldclock> 
+	  in ~/.gworldclock:
+	  <rendezvous>
+	     <doneLabel>Return></doneLabel>
+	  </rendezvous>
+	  Implemented since "Done" was not sufficiently clear to some users,
+	  as a means of indicating that you are done with Rendezvous and wish
+	  to return to the normal clock.
+	  Also, change "Update" to "Update View", to make it clearer what
+	  the button does.
+	* Modernised GTK API:
+	      - menus use GTKActions
+	      - ToggleAction used for Rendezvous in main menu, allowing it
+	      to be switched on and off, with a tick showing it is on.
+	* Rendezvous allows a new zone to be rendezvoused against with
+	  only a single left-click.
+	* Changed gtk_timeout_add to g_timeout_add in timer.c, but it does
+	  not seem to make any difference to CPU usage.
+
+1.3	5 December 2003
+	* Added facilities to options.c to read and save an options file
+	in XML format.
+	* Option file nodes: 
+	<gworldclock> - root node
+	<timeDisplayFormat> - format for display of time and date
+	                      (as accepted by "date")
+	* Added Preferences dialog box to File menu
+	- allows Time and Date display format to be set to one of
+	several preset alternatives, or to a user-defined format.
+
+1.2	28 September 2003
+	* Use config file (~/.gworldclock) to store user's preferred
+	display format for time&date -- work suspended to push I18N patch
+	through.
+	* Internationalisation patch provided by Junichi Uekawa.
+	  Ran "gettextize -c" myself to control incorporation of patch:
+		* Makefile.am (EXTRA_DIST): Add config.rpath.
+		* configure.ac (AC_OUTPUT): Add po/Makefile.in,
+	* After talking to Jeff Waugh at the Debian 10 Year Celebration in
+	Sydney, I decided to rephrase "synchronisation" as "rendezvous",
+	to make the intent clearer.
+
+1.1	5 April 2003
+	* Split code into separate files.
+	* The point of this was to facilitate debugging the problem of the
+	flashing bar on the bottom (unpopulated) row of the
+	window. However, with GTK+2 bumped up to v2.2, the flashing seems
+	to have disappeared, so it must have just been a library bug.
+	* Removed lame comment comparing 64bit to 32bit time
+	representations in "About" message.
+	* Recompiled gworldclock.1 from gworldclock.sgml using docbook2man
+	(Debian package docbook-utils).
+
+1.0.3	28 September 2002
+	* Rearranged code for handling mouse selection (by left or right
+	button) of zones.  Fixes hanging dragged zone on right mouse click.
+
+1.0.2	25 September 2002
+	* Closed a gaping memory leak in SetToGivenTime(), and also in
+	getMonthIndex().
+
+1.0.1	21 September 2002
+	* Update version and date in configure.ac
+
+1.0     21 September 2002
+	* Ported to GTK+ 2.0.
+	* configure scripts generated with automake 1.6, autoconf 2.53
+	* fixed tzwatch to only show timezone (not descriptive label) for
+	each zone in .tzlist.
+	* size of window is adjusted automatically, including when
+	description of zones is changed.	
+	* I decided the internationalization and neater fonts afforded by
+	GTK+2, not to mention the restructuring into a GTKTreeView object,
+	warranted bumping up the major version to 1.0.
+
+0.3.3   20 January 2002
+	* Changed "timezone" to the correct English phrase "time zone".
+
+0.3.2	29 September 2001
+	* close timezone file after saving timezones
+	* ignore "file not found" error when reading timezone file
+	* Using "make distclean" rather than "make maintainer-clean"
+	  probably makes more sense for distributing the source.
+
+0.3.1	25 August 2001
+	* added bin_SCRIPTS and man_MANS to Makefile.am, ran prepnotes
+	  to regenerate Makefiles.
+	* ran "make maintainer-clean" to clear out config.status in source
+	  package (lintian complained about it)
+
+0.3.0   18 July 2001
+	* Added tzwatch.1 man page (prepared by Joop Stakenborg while
+	tzwatch was included with Debian package twclock).
+	Added gworldclock to "See Also" section of tzwatch.1,
+	and made other minor clean up to tzwatch.1.
+	* Created gworldclock.sgml, a DocBook man page.  Prepared the
+	corresponding man page (gworldclock.1) with docbook-to-man.
+
+0.2.1   July 2001
+	* Replaced autoconf's symlinks to install-sh, missing and mkinstalldirs
+	  with the actual files they were linked to.  They shouldn't have 
+	  caused a problem if you compile with ./configure, but were reported 
+	  as problematic in Debian bug #105188.
+		    
+
+0.2.0	June 2001.
+	* implemented time synchronisation, allowing the time to be checked
+	  for other than the current time.
+	* synchronisation limited to between 1901 and 2038 on 32 bit
+	  machines.
+	* Put tzwatch into source directory.
+	* Added README, COPYRIGHT, GPL files.
+
+	
+0.1.0   * reordering of zones in list enabled
+	* #include <string.h> to hopefully fix implicit declaration of
+strcpy and other string functions (warning generated on 64bit Alpha)
+and change that strcpy to strncpy to avoid buffer overflows
+	* likewise added #include <stdlib.h> for getenv etc,
+	SetTime declared in gworldclock.h
+        * -Wall added to Makefile to help find problems (how does this fit
+with autoconf?)
+	* explicity define rowdata[1] (to NULL), or list reordering
+	crashes (can anyone remember what rowdata[1] was for?...)
+
+        [yet to work out how to reorder items in list
+	how do we know the order changed? - for saving list on close ]
+
+	
+0.0.1  Fixed to read description/TZ for new zone from Entry boxes only
+when the zone is actually being added.  Similarly for changing description.
+
+0.0.0  Initial "public" release.  Display and selection of timezones
+basically works. First simple deb package prepared.
+	
