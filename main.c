@@ -144,10 +144,17 @@ void AboutDialog( GtkWidget *w, gpointer clocklist )
     gtk_about_dialog_set_comments( GTK_ABOUT_DIALOG(dialog), comments->str );
     gtk_about_dialog_set_license( GTK_ABOUT_DIALOG(dialog) , licence->str );
     gtk_about_dialog_set_translator_credits( GTK_ABOUT_DIALOG(dialog), _("translator-credits") );
-    gtk_about_dialog_set_logo(GTK_ABOUT_DIALOG(dialog), NULL);
+    
+    GdkPixbuf *icon_pixbuf = load_logo_from_icon_name("gworldclock");
+    
+    GdkPixbuf *icon_pixbuf_scaled=gdk_pixbuf_scale_simple(icon_pixbuf,64,64,GDK_INTERP_BILINEAR);
+    
+    gtk_about_dialog_set_logo(GTK_ABOUT_DIALOG(dialog), icon_pixbuf);
+
 
     gtk_show_about_dialog( NULL,
        "copyright", gtk_about_dialog_get_copyright( GTK_ABOUT_DIALOG(dialog) ),
+       "logo",icon_pixbuf_scaled,
        "license", gtk_about_dialog_get_license( GTK_ABOUT_DIALOG(dialog) ),
        "comments", gtk_about_dialog_get_comments( GTK_ABOUT_DIALOG(dialog) ),
 		 NULL );
